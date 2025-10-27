@@ -1,0 +1,11 @@
+env: melee_range_control_sp
+
+env_args:
+  map_name: "melee_range_control"
+  rc_weight: 0.7
+  max_shaping_ratio: 0.30
+  log_shaping: True
+  rc_pb_gamma: 0.99
+  rc_melee_r_default: 3.0
+  rc_shoot_r_default: 6.0
+  rc_melee_only: True
