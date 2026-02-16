@@ -6,6 +6,7 @@
 
 ## TL;DR: быстрые команды
 
+- Одна команда после `git clone`: `bash bootstrap.sh` (Miniconda + зависимости + SC2 + smoke-запуск)
 - Один запуск: `python src/main.py --config=qmix --env-config=<env> with env_args.map_name=<map> seed=42 ...`
 - Полный дипломный прогон: `bash run_all_shapings.sh`
 - TensorBoard: `./run_tensorboard.sh` (логдир по умолчанию `results/tb_logs`)
@@ -37,6 +38,8 @@
 ├─ final_tb_logs/                     # экспортированные логи TensorBoard (по картам)
 ├─ final_metrics/                     # готовые графики/таблицы (для диплома)
 └─ MARL Reward Shaping/               # презентационный пакет (копии файлов под методичку)
+   ├─ Исходные файлы программного продукта/
+   └─ Руководство по запуску и конфигурации/  # 1.2.1 ... 1.2.6 (PDF)
 ```
 
 ### Поток выполнения (упрощенно)
@@ -60,6 +63,29 @@ run_all_shapings.sh
 ---
 
 ## 2. Точки входа и конфигурирование (Sacred/YAML)
+
+### 2.0 One-command bootstrap
+
+`bootstrap.sh` делает стандартный сценарий "после clone":
+
+1) создает/использует conda env,  
+2) ставит Python зависимости,  
+3) ставит SC2 и SMAC-карты,  
+4) запускает smoke-тренировку (по умолчанию).
+
+Команды:
+
+```bash
+bash bootstrap.sh
+```
+
+Опции:
+
+```bash
+bash bootstrap.sh --run-mode full
+bash bootstrap.sh --run-mode none
+bash bootstrap.sh --env-name pymarl --with-gfootball
+```
 
 ### 2.1 Как собирается конфигурация
 
