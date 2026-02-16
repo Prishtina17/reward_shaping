@@ -75,6 +75,8 @@ for MAP_ENTRY in "${MAP_CONFIGS[@]}"; do
     runner_log_interval="${DIPLOMA_RUNNER_LOG_INTERVAL}"
     learner_log_interval="${DIPLOMA_LEARNER_LOG_INTERVAL}"
     test_nepisode="${DIPLOMA_TEST_NEPISODE}"
+    save_model=True
+    save_model_interval=50000
   )
 
   for ENV_CFG in "${ENV_CONFIGS[@]}"; do
