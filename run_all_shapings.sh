@@ -68,6 +68,7 @@ for MAP_ENTRY in "${MAP_CONFIGS[@]}"; do
   DIPLOMA_ARGS=(
     env_args.map_name="${MAP_NAME}"
     env_args.seed="${SEED}"
+    seed="${SEED}"
     epsilon_anneal_time="${EPSILON_ANNEAL}"
     t_max="${DIPLOMA_T_MAX}"
     test_interval="${DIPLOMA_TEST_INTERVAL}"
