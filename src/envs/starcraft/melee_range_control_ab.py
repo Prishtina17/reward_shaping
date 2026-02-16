@@ -3,14 +3,12 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-import math
 import numpy as np
 
 from .utils import (
     ShapingMetrics,
     _is_melee,
     _nearest_enemy,
-    ring_function,
     update_shaping_metrics,
     ally_damage_step,
     enemy_damage_step,
@@ -19,10 +17,6 @@ from .utils import (
 )
 
 from .StarCraft2Env import StarCraft2Env
-
-
-def _sigmoid(x: float) -> float:
-    return 1.0 / (1.0 + math.exp(-x))
 
 
 class Starcraft2EnvRewardShaping(StarCraft2Env):
@@ -66,7 +60,6 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         self._ep_cooldown_sum = 0.0
         self._ep_cooldown_count = 0
 
-        self.prev_dmin = 0
         self._first_allied_killed_step = -1.0
         self._first_enemy_killed_step = -1.0
 
@@ -240,9 +233,6 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         self._ep_rc_ring_time_sum += float(rc_in_ring_count / max(1, n_alive))
         self._ep_rc_oor_time_sum += float(rc_oor_count / max(1, n_alive))
         self._ep_rc_dmin_sum += float(np.mean(rc_dmins)) if rc_dmins else 0.0
-
-        if rc_dmins:
-            self.prev_dmin = rc_dmins[-1]
 
     def _episode_metrics_payload(self, steps: int) -> Dict[str, float]:
         # Emit first_* only once per episode under shaping/ namespace.

@@ -23,6 +23,9 @@ class EpisodeRunner:
         self.train_stats = {}
         self.test_stats = {}
 
+        # True/False if last completed training episode was win/loss; None if test or not run yet
+        self.last_episode_won = None
+
         # Log the first run
         self.log_train_stats_t = -1000000
 
@@ -34,8 +37,16 @@ class EpisodeRunner:
     def get_env_info(self):
         return self.env.get_env_info()
 
-    def save_replay(self):
-        self.env.save_replay()
+    def save_replay(self, prefix=None):
+        previous_prefix = None
+        if prefix is not None and hasattr(self.env, "replay_prefix"):
+            previous_prefix = self.env.replay_prefix
+            self.env.replay_prefix = prefix
+        try:
+            self.env.save_replay()
+        finally:
+            if prefix is not None and hasattr(self.env, "replay_prefix"):
+                self.env.replay_prefix = previous_prefix
 
     def close_env(self):
         self.env.close()
@@ -103,6 +114,9 @@ class EpisodeRunner:
 
         if not test_mode:
             self.t_env += self.t
+            self.last_episode_won = bool(env_info.get("battle_won", False))
+        else:
+            self.last_episode_won = None
 
         cur_returns.append(episode_return)
 

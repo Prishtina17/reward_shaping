@@ -177,6 +177,85 @@ def run_sequential(args, logger):
     win_rate_threshold = float(getattr(args, "training_win_rate_threshold", 0.95))
     early_stop_triggered = False
 
+    replay_winrate_thresholds = [0.95]  # save replays only at 0.95 win rate
+    saved_replay_markers = set()
+
+    env_name_for_replay = getattr(args, "env", "env")
+    env_cfg_name = getattr(args, "env_config_name", None)
+    env_token = env_cfg_name or env_name_for_replay
+    if isinstance(args.env_args, dict):
+        map_token = args.env_args.get("map_name", "map")
+    else:
+        map_token = getattr(args.env_args, "map_name", "map")
+
+    # How many winning episodes to collect in the replay session before saving
+    replay_min_wins = int(getattr(args, "replay_min_wins", 50))
+    replay_max_episodes = int(getattr(args, "replay_max_episodes", 800))
+
+    def _save_training_replay(win_rate_value: float) -> None:
+        """Save a replay that contains several winning episodes. Uses full_restart so the
+        replay file is a fresh SC2 session; runs episodes until replay_min_wins wins collected."""
+        timestamp_label = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        prefix = f"{env_token}_{map_token}_{win_rate_value:.2f}_{timestamp_label}"
+
+        if not hasattr(runner, "save_replay"):
+            logger.console_logger.warning("Replay save requested but runner has no save_replay method.")
+            return
+
+        # SC2 replay = entire game session. We full_restart env[0] to get a fresh session,
+        # then run episodes until env[0] accumulates enough wins, then save env[0]'s replay.
+        is_parallel = hasattr(runner, "full_restart_replay_env")
+        is_episode = hasattr(runner, "env") and hasattr(runner.env, "full_restart")
+
+        if is_parallel:
+            # ParallelRunner: full_restart env[0], run batches, count env[0] wins
+            runner.full_restart_replay_env()
+            wins_in_session = 0
+            episodes_in_session = 0
+            while wins_in_session < replay_min_wins and episodes_in_session < replay_max_episodes:
+                with th.no_grad():
+                    episode_batch = runner.run(test_mode=False)
+                buffer.insert_episode_batch(episode_batch)
+                episodes_in_session += 1
+                if runner.last_battle_won_per_env[0]:
+                    wins_in_session += 1
+            logger.console_logger.info(
+                "Replay at {:.0f}%: env[0] session has {} wins in {} batches, saving.".format(
+                    win_rate_value * 100.0, wins_in_session, episodes_in_session,
+                )
+            )
+        elif is_episode:
+            # EpisodeRunner: full_restart, run single episodes, count wins
+            runner.env.full_restart()
+            wins_in_session = 0
+            episodes_in_session = 0
+            while wins_in_session < replay_min_wins and episodes_in_session < replay_max_episodes:
+                with th.no_grad():
+                    episode_batch = runner.run(test_mode=False)
+                buffer.insert_episode_batch(episode_batch)
+                episodes_in_session += 1
+                if getattr(runner, "last_episode_won", False):
+                    wins_in_session += 1
+            logger.console_logger.info(
+                "Replay at {:.0f}%: session has {} wins in {} episodes, saving.".format(
+                    win_rate_value * 100.0, wins_in_session, episodes_in_session,
+                )
+            )
+
+        result = runner.save_replay(prefix=prefix)
+        if isinstance(result, dict) and not result.get("ok", True):
+            logger.console_logger.warning(
+                "Replay save failed for win rate {:.2f}%: {}".format(
+                    win_rate_value * 100.0,
+                    result.get("error", "unknown error"),
+                )
+            )
+            return
+
+        logger.console_logger.info(
+            "Replay saved for win rate {:.2f}% with prefix '{}'.".format(win_rate_value * 100.0, prefix)
+        )
+
     while runner.t_env <= args.t_max:
 
         # Run for a whole episode at a time
@@ -190,16 +269,23 @@ def run_sequential(args, logger):
             wins = stats_dict.get("battle_won", 0)
             episodes_count = stats_dict.get("n_episodes", 0)
 
-            current_rate = None
+            battle_won_mean = None
             if episodes_count:
-                current_rate = float(wins) / float(episodes_count)
-            else:
-                current_rate = getattr(runner, "last_logged_train_win_rate", None)
+                battle_won_mean = float(wins) / float(episodes_count)
 
-            if current_rate is not None and current_rate >= win_rate_threshold:
+            if battle_won_mean is not None:
+                for threshold in replay_winrate_thresholds:
+                    if threshold in saved_replay_markers:
+                        continue
+                    if battle_won_mean >= threshold:
+                        _save_training_replay(threshold)
+                        saved_replay_markers.add(threshold)
+
+            if battle_won_mean is not None and battle_won_mean >= win_rate_threshold:
+                logger.log_stat("battle_won_mean", battle_won_mean, runner.t_env)
                 logger.console_logger.info(
                     "Early stop triggered: win rate {:.2f}% (threshold {:.2f}%).".format(
-                        current_rate * 100.0,
+                        battle_won_mean * 100.0,
                         win_rate_threshold * 100.0,
                     )
                 )

@@ -4,7 +4,7 @@
 action_selector: "epsilon_greedy"
 epsilon_start: 1.0
 epsilon_finish: 0.05
-epsilon_anneal_time: 200000 # 500000 for 6h_vs_8z
+epsilon_anneal_time: 250000 # 500000 for 6h_vs_8z
 
 runner: "parallel"
 batch_size_run: 8 # batch_size_run=4, buffer_size = 2500, batch_size=64  for 3s5z_vs_3s6z
@@ -13,9 +13,9 @@ batch_size: 128
 optimizer: 'adam'
 
 training_stop_mode: "win_rate" # Switch to "win_rate" or "steps" for early stopping by win ratio
-training_win_rate_threshold: 0.1
+training_win_rate_threshold: 0.95
 
-t_max: 10050000
+t_max: 10000000
 
 # update the target network every {} episodes
 target_update_interval: 200
@@ -33,7 +33,7 @@ lr: 0.002 # Learning rate for agents
 td_lambda: 0.6 # 0.3 for 6h_vs_8z
 optimizer: 'adam'
 q_lambda: False
-
+  
 # rnn layer normalization
 use_layer_norm: False
 

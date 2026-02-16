@@ -2,7 +2,6 @@
 from __future__ import annotations
 from typing import Dict, List
 
-import math
 import numpy as np
 
 from .utils import (
@@ -43,9 +42,9 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         self._rc_weight = float(rc_weight)
         self._max_ratio = float(max_shaping_ratio)
         self._log = bool(log_shaping)
+        self._rc_melee_only = bool(rc_melee_only)
         self._rc_r_melee_def = float(rc_melee_r_default)
         self._rc_r_shoot_def = float(rc_shoot_r_default)
-        self._rc_melee_only = bool(rc_melee_only)
 
         self.metrics = ShapingMetrics()
         self._pending_state_bonus: float = 0.0
@@ -68,7 +67,6 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         reward, terminated, info = super().step(actions)
         if info is None:
             info = {}
-        self._compute_state_bonus()
         if self._log:
             info.update(self.metrics.to_dict())
         if terminated:
@@ -77,13 +75,11 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
 
     def reward_battle(self) -> float:
         base = super().reward_battle()
-
-        # Raw components
+        self._compute_state_bonus()
         rc_bonus_state_raw = float(self._pending_state_bonus)
         phi_curr = self._compute_phi_only()
         shaped_delta_raw = float(self._rc_weight * ((self.rc_pb_gamma * phi_curr) - self.phi_prev))
 
-        # Cap only the sum
         cap = self._max_ratio * max(1.0, abs(float(base)))
         total_bonus = rc_bonus_state_raw + shaped_delta_raw
         total_bonus = float(np.clip(total_bonus, -cap, +cap))
@@ -91,7 +87,7 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         shaped = float(base) + total_bonus
 
         cache = dict(self._shaping_cache) if isinstance(self._shaping_cache, dict) else {}
-
+    
         alive_allies = count_alive_allies(self)
         alive_enemies = count_alive_enemies(self)
         cache["ally_alive"] = float(alive_allies)
@@ -119,7 +115,8 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         return shaped
 
     def _compute_state_bonus(self) -> None:
-        # Use ring_function(dmin) average as a state-based bonus
+        center = (self._rc_r_melee_def + self._rc_r_shoot_def) / 2.0
+        half_width = max(1e-3, (self._rc_r_shoot_def - self._rc_r_melee_def) / 2.0)
         melee_ids = []
         rc_dmins: List[float] = []
         ring_raw_sum = 0.0
@@ -148,7 +145,7 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
             n_alive += 1
             dmin, _ = _nearest_enemy(self, ally, melee_ids)
             rc_dmins.append(dmin)
-            ring_raw_sum += ring_function(dmin)
+            ring_raw_sum += ring_function(dmin, center=center, half_width=half_width)
             cooldown_sum += float(getattr(ally, "weapon_cooldown", 0.0))
         if n_alive == 0:
             self._pending_state_bonus = 0.0
@@ -169,7 +166,8 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         self._shaping_cache = cache
 
     def _compute_phi_only(self) -> float:
-        # same as state bonus pre-weight
+        center = (self._rc_r_melee_def + self._rc_r_shoot_def) / 2.0
+        half_width = max(1e-3, (self._rc_r_shoot_def - self._rc_r_melee_def) / 2.0)
         melee_ids = []
         ring_raw_sum = 0.0
         n_alive = 0
@@ -188,7 +186,7 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
                 continue
             n_alive += 1
             dmin, _ = _nearest_enemy(self, ally, melee_ids)
-            ring_raw_sum += ring_function(dmin)
+            ring_raw_sum += ring_function(dmin, center=center, half_width=half_width)
         if n_alive == 0:
             return 0.0
         return float(ring_raw_sum / n_alive)

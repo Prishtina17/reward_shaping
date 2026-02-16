@@ -28,6 +28,8 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         rc_weight: float = 0.7,
         max_shaping_ratio: float = 0.30,
         log_shaping: bool = True,
+        rc_melee_r_default: float = 3.0,
+        rc_shoot_r_default: float = 6.0,
         rc_melee_only: bool = True,
         **kwargs,
     ):
@@ -38,6 +40,8 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         self._max_ratio = float(max_shaping_ratio)
         self._log = bool(log_shaping)
         self._rc_melee_only = bool(rc_melee_only)
+        self._rc_r_melee_def = float(rc_melee_r_default)
+        self._rc_r_shoot_def = float(rc_shoot_r_default)
 
         self.metrics = ShapingMetrics()
         self._pending_action_bonus: float = 0.0
@@ -59,24 +63,18 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
 
     def step(self, actions):
         self._compute_action_bonus(actions)
-
         reward, terminated, info = super().step(actions)
         if info is None:
             info = {}
-
-        self._compute_state_bonus()
-
         if self._log:
             info.update(self.metrics.to_dict())
-
         if terminated:
             info.update(self._episode_metrics_payload(max(1, self._episode_steps)))
-
         return reward, terminated, info
 
     def reward_battle(self) -> float:
         base = super().reward_battle()
-
+        self._compute_state_bonus()
         bonus_action = float(self._pending_action_bonus)
         bonus_state = float(self._pending_state_bonus)
         total_bonus = bonus_action + bonus_state
@@ -218,6 +216,8 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
             }
             return
 
+        center = (self._rc_r_melee_def + self._rc_r_shoot_def) / 2.0
+        half_width = max(1e-3, (self._rc_r_shoot_def - self._rc_r_melee_def) / 2.0)
         n_alive = 0
         for i, ally in self.agents.items():
             if float(getattr(ally, "health", 0.0)) <= 1e-6:
@@ -225,7 +225,7 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
             n_alive += 1
             dmin, _ = _nearest_enemy(self, ally, melee_ids)
             rc_dmins.append(dmin)
-            ring_raw_sum += ring_function(dmin)
+            ring_raw_sum += ring_function(dmin, center=center, half_width=half_width)
             cooldown_sum += float(getattr(ally, "weapon_cooldown", 0.0))
 
         if n_alive == 0:

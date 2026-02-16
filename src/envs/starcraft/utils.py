@@ -23,8 +23,8 @@ class ShapingMetrics:
     ally_alive: float = 0.0
     ally_dmg: float = 0.0
     enemy_alive: float = 0.0
-    first_allied_killed: float = 0
-    first_enemy_killed: float = 0
+    first_allied_killed: float = 0.0
+    first_enemy_killed: float = 0.0
 
     def reset(self) -> None:
         self.base = 0.0
@@ -37,8 +37,8 @@ class ShapingMetrics:
         self.ally_alive = 0.0
         self.ally_dmg = 0.0
         self.enemy_alive = 0.0
-        self.first_allied_killed = 0
-        self.first_enemy_killed = 0
+        self.first_allied_killed = 0.0
+        self.first_enemy_killed = 0.0
 
     def to_dict(self) -> Dict[str, float]:
         payload = {
@@ -96,7 +96,8 @@ def update_shaping_metrics(
     metrics.ally_alive = float(ally_alive) if ally_alive is not None else 0.0
 
     ally_dmg = cache.get("ally_dmg")
-    metrics.ally_dmg = float(ally_dmg) if ally_dmg is not None else 0.0
+    if ally_dmg is not None:
+        metrics.ally_dmg += float(ally_dmg)
 
     enemy_alive = cache.get("enemy_alive")
     metrics.enemy_alive = float(enemy_alive) if enemy_alive is not None else 0.0
@@ -299,32 +300,84 @@ def weapon_idling_mean(self) -> float:
         return 0.0
     return float(idle) / float(denom)
 
-def ring_function( d: float,
-                  center: float = 5.25,
-                  half_width: float = 0.75,
-                  slope: float = 0.15) -> float:
-        """
-        Бублик с плато и квадратичным спадом.
+def ring_function(
+    d: float,
+    center: float = 5.25,
+    half_width: float = 0.75,
+    slope: float = 0.15,
+) -> float:
+    """
+    Бублик с плато и квадратичным спадом.
+    По умолчанию зона [center - half_width, center + half_width].
+    Для melee/shoot можно задать center=(Rm+Rs)/2, half_width=(Rs-Rm)/2.
 
-        :param d: расстояние до врага
-        :param center: центр плато (середина sweet spot)
-        :param half_width: половина ширины плато (0.5 = [5,6])
-        :param slope: скорость квадратичного спада (чем больше, тем резче падение)
-        :return: скор ∈ [0,1]
-        """
+    :param d: расстояние до врага
+    :param center: центр плато (середина sweet spot)
+    :param half_width: половина ширины плато
+    :param slope: скорость квадратичного спада
+    :return: скор ∈ [-1, 1]
+    """
+    if half_width <= 0:
+        half_width = 1e-3
+    if abs(d - center) <= half_width:
+        return 1.0
+    dist = abs(d - center) - half_width
+    val = 1.0 - slope * (dist ** 1.5)
+    return max(-1.0, val)
 
-        # если внутри плато → возвращаем 1
-        if abs(d - center) <= half_width:
-            return 1.0
 
-        # считаем, насколько далеко мы вышли за плато
-        dist = abs(d - center) - half_width
-
-        # квадратичный спад: 1 - (slope * dist^2)
-        val = 1.0 - slope * (dist ** 1.5)
-
-        # обрезаем снизу до 0
-        return max(-1 , val)
+def compute_ring_bonus_from_state(
+    env: Any,
+    rc_weight: float,
+    rc_melee_only: bool,
+    center: float,
+    half_width: float,
+) -> Tuple[float, Dict[str, Any]]:
+    """
+    Вычисляет позиционный бонус (ring) по текущему состоянию окружения.
+    Возвращает (weighted_bonus, cache) для использования в reward_battle и update_shaping_metrics.
+    """
+    cache: Dict[str, Any] = {"dmins": [], "raw_bonus": 0.0, "cooldown": 0.0}
+    melee_ids: List[int] = []
+    for j in range(env.n_enemies):
+        e = env.enemies.get(j, None)
+        if e is None:
+            continue
+        if (float(getattr(e, "health", 0.0)) + float(getattr(e, "shield", 0.0))) <= 1e-6:
+            continue
+        if (not rc_melee_only) or _is_melee(getattr(e, "unit_type", 0)):
+            melee_ids.append(j)
+    if len(melee_ids) == 0:
+        cache["ally_alive"] = float(count_alive_allies(env))
+        cache["enemy_alive"] = float(count_alive_enemies(env))
+        cache["ally_dmg"] = 0.0
+        return 0.0, cache
+    rc_dmins: List[float] = []
+    ring_raw_sum = 0.0
+    cooldown_sum = 0.0
+    n_alive = 0
+    for i, ally in env.agents.items():
+        if float(getattr(ally, "health", 0.0)) + float(getattr(ally, "shield", 0.0)) <= 1e-6:
+            continue
+        n_alive += 1
+        cooldown_sum += float(getattr(ally, "weapon_cooldown", 0.0))
+        dmin, _ = _nearest_enemy(env, ally, melee_ids)
+        rc_dmins.append(dmin)
+        ring_raw_sum += ring_function(dmin, center=center, half_width=half_width)
+    if n_alive == 0:
+        cache["ally_alive"] = float(count_alive_allies(env))
+        cache["enemy_alive"] = float(count_alive_enemies(env))
+        cache["ally_dmg"] = 0.0
+        return 0.0, cache
+    ring_raw_mean = ring_raw_sum / n_alive
+    weighted = float(rc_weight) * float(ring_raw_mean)
+    cache["dmins"] = list(rc_dmins)
+    cache["raw_bonus"] = float(ring_raw_mean)
+    cache["cooldown"] = float(cooldown_sum / n_alive)
+    cache["ally_alive"] = float(count_alive_allies(env))
+    cache["enemy_alive"] = float(count_alive_enemies(env))
+    cache["ally_dmg"] = 0.0
+    return weighted, cache
 
 
 # ---------- утилиты ----------

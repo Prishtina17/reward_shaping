@@ -2,6 +2,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from typing import Dict
+
 from smac.env.multiagentenv import MultiAgentEnv
 from envs.starcraft.smac_maps import get_map_params
 
@@ -21,6 +23,14 @@ from s2clientprotocol import common_pb2 as sc_common
 from s2clientprotocol import sc2api_pb2 as sc_pb
 from s2clientprotocol import raw_pb2 as r_pb
 from s2clientprotocol import debug_pb2 as d_pb
+
+from .utils import (
+    ally_damage_step,
+    count_alive_allies,
+    count_alive_enemies,
+    dmin_mean,
+    enemy_damage_step,
+)
 
 races = {
     "R": sc_common.Random,
@@ -284,6 +294,13 @@ class StarCraft2Env(MultiAgentEnv):
         self._sc2_proc = None
         self._controller = None
 
+        self._episode_metric_acc = None
+        self._ally_alive_last = 0.0
+        self._enemy_alive_last = 0.0
+        self._first_allied_killed_step = -1.0
+        self._first_enemy_killed_step = -1.0
+        self._reset_metric_accumulators()
+
         # Try to avoid leaking SC2 processes on shutdown
         atexit.register(lambda: self.close())
 
@@ -358,6 +375,8 @@ class StarCraft2Env(MultiAgentEnv):
 
         self.last_action = np.zeros((self.n_agents, self.n_actions))
 
+        self._reset_metric_accumulators()
+
         if self.heuristic_ai:
             self.heuristic_targets = [None] * self.n_agents
 
@@ -429,6 +448,9 @@ class StarCraft2Env(MultiAgentEnv):
         # Update units
         game_end_code = self.update_units()
 
+        # Accumulate diagnostics for episode-level logging
+        self._collect_state_metrics_step()
+
         terminated = False
         reward = self.reward_battle()
         info = {"battle_won": False}
@@ -460,6 +482,9 @@ class StarCraft2Env(MultiAgentEnv):
             self.battles_game += 1
             self.timeouts += 1
 
+        if terminated:
+            info.update(self._finalize_state_metrics())
+
         if self.debug:
             logging.debug("Reward = {}".format(reward).center(60, '-'))
 
@@ -470,6 +495,89 @@ class StarCraft2Env(MultiAgentEnv):
             reward /= self.max_reward / self.reward_scale_rate
 
         return reward, terminated, info
+
+    def _reset_metric_accumulators(self) -> None:
+        self._episode_metric_acc = {
+            "dmin_sum": 0.0,
+            "dmin_count": 0,
+            "cooldown_sum": 0.0,
+            "cooldown_count": 0,
+            "ally_dmg_sum": 0.0,
+        }
+        self._ally_alive_last = 0.0
+        self._enemy_alive_last = 0.0
+        self._first_allied_killed_step = -1.0
+        self._first_enemy_killed_step = -1.0
+
+    def _collect_state_metrics_step(self) -> None:
+        acc = self._episode_metric_acc
+        if acc is None:
+            return
+
+        try:
+            d_mean = float(dmin_mean(self))
+        except Exception:
+            d_mean = 0.0
+        acc["dmin_sum"] += d_mean
+        acc["dmin_count"] += 1
+
+        alive_agents = 0
+        cooldown_sum = 0.0
+        for ally in self.agents.values():
+            hp = float(getattr(ally, "health", 0.0)) + float(getattr(ally, "shield", 0.0))
+            if hp <= 1e-6:
+                continue
+            alive_agents += 1
+            cooldown_sum += float(getattr(ally, "weapon_cooldown", 0.0))
+        avg_cooldown = float(cooldown_sum / alive_agents) if alive_agents > 0 else 0.0
+        acc["cooldown_sum"] += avg_cooldown
+        acc["cooldown_count"] += 1
+
+        self._ally_alive_last = float(count_alive_allies(self))
+        self._enemy_alive_last = float(count_alive_enemies(self))
+
+        dmg_to_enemies, enemy_kills = enemy_damage_step(self)
+        ally_dmg_total = float(np.sum(dmg_to_enemies)) if getattr(dmg_to_enemies, "size", 0) > 0 else 0.0
+        acc["ally_dmg_sum"] += ally_dmg_total
+
+        _, ally_deaths = ally_damage_step(self)
+        if ally_deaths > 0 and self._first_allied_killed_step < 0:
+            self._first_allied_killed_step = float(self._episode_steps)
+        if enemy_kills > 0 and self._first_enemy_killed_step < 0:
+            self._first_enemy_killed_step = float(self._episode_steps)
+
+    def _finalize_state_metrics(self) -> Dict[str, float]:
+        acc = self._episode_metric_acc or {
+            "dmin_sum": 0.0,
+            "dmin_count": 0,
+            "cooldown_sum": 0.0,
+            "cooldown_count": 0,
+            "ally_dmg_sum": 0.0,
+        }
+
+        dmin_mean_val = (
+            float(acc["dmin_sum"] / acc["dmin_count"]) if acc["dmin_count"] > 0 else 0.0
+        )
+        cooldown_mean_val = (
+            float(acc["cooldown_sum"] / acc["cooldown_count"]) if acc["cooldown_count"] > 0 else 0.0
+        )
+
+        metrics: Dict[str, float] = {
+            "shaping/dmin_mean": dmin_mean_val,
+            "shaping/cooldown": cooldown_mean_val,
+            "shaping/ally_alive": float(self._ally_alive_last),
+            "shaping/enemy_alive": float(self._enemy_alive_last),
+            "shaping/ally_dmg": float(acc["ally_dmg_sum"]),
+        }
+
+        metrics["shaping/first_allied_killed"] = (
+            self._first_allied_killed_step if self._first_allied_killed_step >= 0 else 0.0
+        )
+        metrics["shaping/first_enemy_killed"] = (
+            self._first_enemy_killed_step if self._first_enemy_killed_step >= 0 else 0.0
+        )
+
+        return metrics
 
     def get_agent_action(self, a_id, action):
         """Construct the action for agent a_id."""

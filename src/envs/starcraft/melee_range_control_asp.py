@@ -30,6 +30,8 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         max_shaping_ratio: float = 0.30,
         log_shaping: bool = True,
         rc_pb_gamma: float = 0.99,
+        rc_melee_r_default: float = 3.0,
+        rc_shoot_r_default: float = 6.0,
         rc_melee_only: bool = True,
         **kwargs,
     ):
@@ -39,8 +41,9 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         self._rc_weight = float(rc_weight)
         self._max_ratio = float(max_shaping_ratio)
         self._log = bool(log_shaping)
-
         self._rc_melee_only = bool(rc_melee_only)
+        self._rc_r_melee_def = float(rc_melee_r_default)
+        self._rc_r_shoot_def = float(rc_shoot_r_default)
 
         self.metrics = ShapingMetrics()
         self._pending_action_bonus: float = 0.0
@@ -192,6 +195,8 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
             cache["ally_dmg"] = 0.0
             self._shaping_cache = cache
             return
+        center = (self._rc_r_melee_def + self._rc_r_shoot_def) / 2.0
+        half_width = max(1e-3, (self._rc_r_shoot_def - self._rc_r_melee_def) / 2.0)
         n_alive = 0
         for i, ally in self.agents.items():
             if float(getattr(ally, "health", 0.0)) <= 1e-6:
@@ -199,7 +204,7 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
             n_alive += 1
             dmin, _ = _nearest_enemy(self, ally, melee_ids)
             rc_dmins.append(dmin)
-            ring_raw_sum += ring_function(dmin)
+            ring_raw_sum += ring_function(dmin, center=center, half_width=half_width)
             cooldown_sum += float(getattr(ally, "weapon_cooldown", 0.0))
         if n_alive == 0:
             self._pending_state_bonus = 0.0
@@ -232,12 +237,14 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
                 melee_ids.append(j)
         if len(melee_ids) == 0:
             return 0.0
+        center = (self._rc_r_melee_def + self._rc_r_shoot_def) / 2.0
+        half_width = max(1e-3, (self._rc_r_shoot_def - self._rc_r_melee_def) / 2.0)
         for i, ally in self.agents.items():
             if float(getattr(ally, "health", 0.0)) <= 1e-6:
                 continue
             n_alive += 1
             dmin, _ = _nearest_enemy(self, ally, melee_ids)
-            ring_raw_sum += ring_function(dmin)
+            ring_raw_sum += ring_function(dmin, center=center, half_width=half_width)
         if n_alive == 0:
             return 0.0
         return float(ring_raw_sum / n_alive)
@@ -249,4 +256,3 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
             "shaping/first_allied_killed": float(fa),
             "shaping/first_enemy_killed": float(fe),
         }
-import numpy as np

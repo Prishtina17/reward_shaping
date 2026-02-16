@@ -42,8 +42,9 @@ class ParallelRunner:
         self.test_stats = {}
 
         self.log_train_stats_t = -100000
-        self.last_logged_train_win_rate = None
-        self.last_logged_test_win_rate = None
+
+        # Track per-env battle_won for replay saving (indexed by env idx)
+        self.last_battle_won_per_env = [False] * self.batch_size
 
     def setup(self, scheme, groups, preprocess, mac):
         self.new_batch = partial(EpisodeBatch, scheme, groups, self.batch_size, self.episode_limit + 1,
@@ -56,8 +57,26 @@ class ParallelRunner:
     def get_env_info(self):
         return self.env_info
 
-    def save_replay(self):
-        pass
+    def full_restart_replay_env(self):
+        """Send full_restart to env[0] so its SC2 session (and replay) starts fresh."""
+        try:
+            self.parent_conns[0].send(("full_restart", None))
+            result = self.parent_conns[0].recv()
+            return result
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def save_replay(self, prefix=None):
+        if not self.parent_conns:
+            return {"ok": False, "error": "no_env_process"}
+
+        payload = {"prefix": prefix}
+        try:
+            self.parent_conns[0].send(("save_replay", payload))
+            result = self.parent_conns[0].recv()
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        return result if isinstance(result, dict) else {"ok": True}
 
     def close_env(self):
         for parent_conn in self.parent_conns:
@@ -97,6 +116,7 @@ class ParallelRunner:
         terminated = [False for _ in range(self.batch_size)]
         envs_not_terminated = [b_idx for b_idx, termed in enumerate(terminated) if not termed]
         final_env_infos = []  # may store extra stats like battle won. this is filled in ORDER OF TERMINATION
+        env_infos_by_idx = [None] * self.batch_size  # indexed by env idx
         
         save_probs = getattr(self.args, "save_probs", False)
         while True:
@@ -160,6 +180,7 @@ class ParallelRunner:
                     env_terminated = False
                     if data["terminated"]:
                         final_env_infos.append(data["info"])
+                        env_infos_by_idx[idx] = data["info"]
                     if data["terminated"] and not data["info"].get("episode_limit", False):
                         env_terminated = True
                     terminated[idx] = data["terminated"]
@@ -181,6 +202,10 @@ class ParallelRunner:
 
         if not test_mode:
             self.t_env += self.env_steps_this_run
+            # Track per-env battle_won for replay saving
+            for i in range(self.batch_size):
+                info = env_infos_by_idx[i]
+                self.last_battle_won_per_env[i] = bool(info.get("battle_won", False)) if info else False
 
         # Get stats back for each env
         for parent_conn in self.parent_conns:
@@ -219,16 +244,6 @@ class ParallelRunner:
         returns_std = np.std(returns)
         self.logger.log_stat(prefix + "return_mean", returns_mean, self.t_env)
         self.logger.log_stat(prefix + "return_std", returns_std, self.t_env)
-
-        episodes = stats.get("n_episodes", 0)
-        if episodes:
-            wins = stats.get("battle_won", 0)
-            win_rate = float(wins) / float(episodes)
-            self.logger.log_stat(prefix + "win_rate", win_rate, self.t_env)
-            if prefix == "":
-                self.last_logged_train_win_rate = win_rate
-            elif prefix == "test_":
-                self.last_logged_test_win_rate = win_rate
 
         returns.clear()
 
@@ -276,6 +291,36 @@ def env_worker(remote, env_fn):
             remote.send(env.get_env_info())
         elif cmd == "get_stats":
             remote.send(env.get_stats())
+        elif cmd == "full_restart":
+            status = {"ok": True, "error": ""}
+            try:
+                if hasattr(env, "full_restart"):
+                    env.full_restart()
+                else:
+                    status["ok"] = False
+                    status["error"] = "env has no full_restart"
+            except Exception as exc:
+                status["ok"] = False
+                status["error"] = str(exc)
+            remote.send(status)
+        elif cmd == "save_replay":
+            prefix = None
+            if isinstance(data, dict):
+                prefix = data.get("prefix", None)
+            previous_prefix = None
+            if prefix is not None and hasattr(env, "replay_prefix"):
+                previous_prefix = env.replay_prefix
+                env.replay_prefix = prefix
+            status = {"ok": True, "error": ""}
+            try:
+                env.save_replay()
+            except Exception as exc:
+                status["ok"] = False
+                status["error"] = str(exc)
+            finally:
+                if prefix is not None and hasattr(env, "replay_prefix"):
+                    env.replay_prefix = previous_prefix
+            remote.send(status)
         else:
             raise NotImplementedError
 

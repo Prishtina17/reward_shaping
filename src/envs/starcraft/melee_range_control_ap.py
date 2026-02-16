@@ -2,7 +2,6 @@
 from __future__ import annotations
 from typing import Dict, List
 
-import math
 import numpy as np
 
 from .utils import (
@@ -20,10 +19,6 @@ from .utils import (
 from .StarCraft2Env import StarCraft2Env
 
 
-def _sigmoid(x: float) -> float:
-    return 1.0 / (1.0 + math.exp(-x))
-
-
 class Starcraft2EnvRewardShaping(StarCraft2Env):
     """Action + Potential shaping.
     Action shaping follows a simple rule-based controller toward/away shooting zone.
@@ -37,15 +32,6 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         max_shaping_ratio: float = 0.30,
         log_shaping: bool = True,
         rc_pb_gamma: float = 0.99,
-        # geometry
-        rc_alpha: float = 10,
-        rc_m_melee: float = 0.10,
-        rc_m_shoot: float = 0.10,
-        rc_ring_gain: float = 4,
-        rc_melee_barrier: float = 0.7,
-        rc_far_cost: float = 0.10,
-        rc_close_cost: float = 0.25,
-        rc_close_zone_shrink: float = 0.10,
         rc_melee_r_default: float = 3.0,
         rc_shoot_r_default: float = 6.0,
         rc_melee_only: bool = True,
@@ -57,25 +43,13 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         self._rc_weight = float(rc_weight)
         self._max_ratio = float(max_shaping_ratio)
         self._log = bool(log_shaping)
-
-        self._rc_alpha = float(rc_alpha)
-        self._rc_m_melee = float(rc_m_melee)
-        self._rc_m_shoot = float(rc_m_shoot)
-        self._rc_ring_gain = float(rc_ring_gain)
-        self._rc_barrier = float(rc_melee_barrier)
-        self._rc_far = float(rc_far_cost)
-        self._rc_close_cost = float(rc_close_cost)
-        self._rc_close_zone_shrink = float(rc_close_zone_shrink)
-
+        self._rc_melee_only = bool(rc_melee_only)
         self._rc_r_melee_def = float(rc_melee_r_default)
         self._rc_r_shoot_def = float(rc_shoot_r_default)
-        self._rc_melee_only = bool(rc_melee_only)
 
         self.metrics = ShapingMetrics()
         self._pending_action_bonus: float = 0.0
         self._shaping_cache: Dict[str, object] = {}
-
-        self.prev_dmin = 0.0
         self.rc_pb_gamma = float(rc_pb_gamma)
         self.phi_prev = 0.0
         self._first_allied_killed_step = -1.0
@@ -84,7 +58,6 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
     def reset(self):
         self.metrics.reset()
         self._pending_action_bonus = 0.0
-        self.prev_dmin = 0.0
         self.phi_prev = 0.0
         self._shaping_cache.clear()
         self._first_allied_killed_step = -1.0
@@ -92,26 +65,28 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         return super().reset()
 
     def step(self, actions):
+        self._compute_action_bonus(actions)
+
         reward, terminated, info = super().step(actions)
+
         if info is None:
             info = {}
-        # Prepare action-based shaping for next reward tick
-        self._compute_action_bonus(actions)
+
         if self._log:
             info.update(self.metrics.to_dict())
+
         if terminated:
             info.update(self._episode_metrics_payload(max(1, self._episode_steps)))
+            
         return reward, terminated, info
 
     def reward_battle(self) -> float:
         base = super().reward_battle()
 
-        # Raw components (no per-component clipping)
         rc_bonus_act_raw = float(self._pending_action_bonus)
         phi_curr = self._compute_rc_phi()
         shaped_delta_raw = float(self._rc_weight * ((self.rc_pb_gamma * phi_curr) - self.phi_prev))
 
-        # Cap only the sum of all bonuses
         cap = self._max_ratio * max(1.0, abs(float(base)))
         total_bonus = rc_bonus_act_raw + shaped_delta_raw
         total_bonus = float(np.clip(total_bonus, -cap, +cap))
@@ -168,6 +143,8 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
             self._shaping_cache = cache
             return 0.0
 
+        center = (self._rc_r_melee_def + self._rc_r_shoot_def) / 2.0
+        half_width = max(1e-3, (self._rc_r_shoot_def - self._rc_r_melee_def) / 2.0)
         n_alive = 0
         for i, ally in self.agents.items():
             if float(getattr(ally, "health", 0.0)) <= 1e-6:
@@ -175,8 +152,7 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
             n_alive += 1
             dmin, _ = _nearest_enemy(self, ally, melee_ids)
             rc_dmins.append(dmin)
-            ring_score = ring_function(dmin)
-            ring_raw_sum += ring_score
+            ring_raw_sum += ring_function(dmin, center=center, half_width=half_width)
             cooldown_sum += float(getattr(ally, "weapon_cooldown", 0.0))
 
         if n_alive == 0:
