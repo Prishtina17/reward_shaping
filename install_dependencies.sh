@@ -45,8 +45,8 @@ fi
 
 echo "[deps] Установка pip-пакетов в env: ${ENV_NAME}"
 "${CONDA_EXE}" run -n "${ENV_NAME}" python -m pip install \
-  protobuf==3.19.5 sacred==0.7.5 numpy scipy gym==0.11 matplotlib seaborn \
-  pyyaml==5.3.1 pygame pytest probscale imageio snakeviz tensorboard-logger pymongo
+  protobuf==3.19.5 sacred==0.7.5 numpy==1.23.5 scipy==1.10.1 gym==0.11 matplotlib seaborn \
+  pyyaml==5.3.1 pygame pytest probscale imageio snakeviz tensorboard==2.11.2 tensorboard-logger pymongo
 
 echo "[deps] Установка SMAC (фиксированный коммит) в env: ${ENV_NAME}"
 "${CONDA_EXE}" run -n "${ENV_NAME}" python -m pip install \

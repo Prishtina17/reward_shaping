@@ -12,7 +12,7 @@ buffer_size: 5000
 batch_size: 128
 optimizer: 'adam'
 
-training_stop_mode: "win_rate" # Switch to "win_rate" or "steps" for early stopping by win ratio
+training_stop_mode: "steps" # Fixed budgets keep learning curves and final performance comparable.
 training_win_rate_threshold: 0.95
 
 t_max: 10000000

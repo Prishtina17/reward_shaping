@@ -8,6 +8,7 @@ from .utils import (
     ShapingMetrics,
     _is_melee,
     _nearest_enemy,
+    compute_kiting_action_bonus,
     ring_function,
     update_shaping_metrics,
     ally_damage_step,
@@ -33,7 +34,6 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         rc_melee_only: bool = True,
         **kwargs,
     ):
-        kwargs["move_amount"] = 3
         super().__init__(*args, **kwargs)
 
         self._rc_weight = float(rc_weight)
@@ -122,76 +122,17 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         return shaped
 
     def _compute_action_bonus(self, actions) -> None:
-        self._action_cache = {}
-        actions_int = [int(a) for a in actions]
-        melee_ids = []
-        for j in range(self.n_enemies):
-            e = self.enemies.get(j, None)
-            if e is None:
-                continue
-            if (float(getattr(e, "health", 0.0)) + float(getattr(e, "shield", 0.0))) <= 1e-6:
-                continue
-            if (not self._rc_melee_only) or _is_melee(e.unit_type):
-                melee_ids.append(j)
-        if len(melee_ids) == 0:
-            self._pending_action_bonus = 0.0
-            self._action_cache = {"raw_bonus_action": 0.0}
-            return
-
-        score_sum = 0.0
-        n_alive = 0
-        cooldown_sum = 0.0
-        rc_dmins: List[float] = []
-        for i, action in enumerate(actions_int):
-            ally = self.agents.get(i, None)
-            if ally is None or float(getattr(ally, "health", 0.0)) <= 1e-6:
-                continue
-            n_alive += 1
-            cooldown_sum += float(getattr(ally, "weapon_cooldown", 0.0))
-            dmin, j_near = _nearest_enemy(self, ally, melee_ids)
-            rc_dmins.append(dmin)
-            target = self.enemies.get(j_near)
-            if target is None:
-                continue
-
-            dx = target.pos.x - ally.pos.x
-            dy = target.pos.y - ally.pos.y
-
-            if abs(dx) > abs(dy):
-                action_num = 4 if dx < 0 else 5
-            else:
-                action_num = 2 if dy < 0 else 3
-
-            score = 0
-            if 3.0 <= dmin <= 7.0:
-                if getattr(ally, "weapon_cooldown", 0.0) > 0:
-                    if action_num == action:
-                        score = 1
-                else:
-                    if action > 5:
-                        score = 1
-            else:
-                if action_num == action:
-                    score = 1
-
-            score_sum += score
-
-        if n_alive == 0:
-            self._pending_action_bonus = 0.0
-            self._action_cache = {
-                "raw_bonus_action": 0.0,
-                "dmins": list(rc_dmins),
-                "cooldown": 0.0,
-            }
-            return
-
-        raw_mean = float(score_sum / n_alive)
-        self._pending_action_bonus = float(self._rc_weight * raw_mean)
-        self._action_cache = {
-            "raw_bonus_action": raw_mean,
-            "dmins": list(rc_dmins),
-            "cooldown": float(cooldown_sum / n_alive) if n_alive > 0 else 0.0,
-        }
+        bonus, cache = compute_kiting_action_bonus(
+            self,
+            actions,
+            weight=self._rc_weight,
+            melee_only=self._rc_melee_only,
+            melee_range=self._rc_r_melee_def,
+            shoot_range=self._rc_r_shoot_def,
+        )
+        self._pending_action_bonus = float(bonus)
+        cache["raw_bonus_action"] = float(cache.get("raw_bonus", 0.0))
+        self._action_cache = cache
 
     def _compute_state_bonus(self) -> None:
         self._state_cache = {}

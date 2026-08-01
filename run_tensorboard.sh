@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Launch TensorBoard for this project.
-# Default logdir is the one used by runners: results/tb_logs
+# Default logdir is the final seeded protocol output.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR"
@@ -12,7 +12,7 @@ if [[ ! -d "$ROOT_DIR/results" ]]; then
     ROOT_DIR="$PARENT_DIR"
   fi
 fi
-LOGDIR_DEFAULT="$ROOT_DIR/results/tb_logs"
+LOGDIR_DEFAULT="$ROOT_DIR/results/final_run/tb_logs"
 
 HOST="0.0.0.0"
 PORT="6006"

@@ -415,8 +415,125 @@ def _nearest_enemy(env: Any, ally, enemy_ids: List[int]) -> Tuple[float, Optiona
             dmin, idx = d, j
     return dmin, idx
 
+MELEE_UNIT_TYPE_IDS = frozenset(
+    {
+        9,    # Baneling
+        73,   # Zealot
+        105,  # Zergling
+    }
+)
+
+
 def _is_melee(unit_type: int) -> bool:
-    return True
+    """Return whether a raw SC2 unit type is melee in the supported SMAC set."""
+    try:
+        return int(unit_type) in MELEE_UNIT_TYPE_IDS
+    except (TypeError, ValueError):
+        return False
+
+
+def compute_kiting_action_bonus(
+    env: Any,
+    actions,
+    *,
+    weight: float,
+    melee_only: bool,
+    melee_range: float,
+    shoot_range: float,
+) -> Tuple[float, Dict[str, Any]]:
+    """Score action advice for a ranged-vs-melee kiting transition.
+
+    The advice is deliberately simple and deterministic:
+    move away below melee range, attack inside shooting range when the weapon
+    is ready, otherwise kite away, and close the distance when out of range.
+    """
+    actions_int = [int(action) for action in actions]
+    cache: Dict[str, Any] = {
+        "dmins": [],
+        "raw_bonus": 0.0,
+        "cooldown": 0.0,
+    }
+
+    enemy_ids: List[int] = []
+    for enemy_id in range(getattr(env, "n_enemies", 0)):
+        enemy = env.enemies.get(enemy_id, None)
+        if enemy is None:
+            continue
+        hp = float(getattr(enemy, "health", 0.0)) + float(
+            getattr(enemy, "shield", 0.0)
+        )
+        if hp <= 1e-6:
+            continue
+        if (not melee_only) or _is_melee(getattr(enemy, "unit_type", None)):
+            enemy_ids.append(enemy_id)
+
+    if not enemy_ids:
+        cache["ally_alive"] = float(count_alive_allies(env))
+        cache["enemy_alive"] = float(count_alive_enemies(env))
+        cache["ally_dmg"] = 0.0
+        return 0.0, cache
+
+    score_sum = 0.0
+    cooldown_sum = 0.0
+    alive = 0
+    n_actions_no_attack = int(getattr(env, "n_actions_no_attack", 6))
+
+    for agent_id, action in enumerate(actions_int):
+        ally = env.agents.get(agent_id, None)
+        if ally is None:
+            continue
+        ally_hp = float(getattr(ally, "health", 0.0)) + float(
+            getattr(ally, "shield", 0.0)
+        )
+        if ally_hp <= 1e-6:
+            continue
+
+        distance, nearest_id = _nearest_enemy(env, ally, enemy_ids)
+        target = env.enemies.get(nearest_id, None)
+        if target is None:
+            continue
+
+        alive += 1
+        cache["dmins"].append(float(distance))
+        cooldown = float(getattr(ally, "weapon_cooldown", 0.0))
+        cooldown_sum += cooldown
+
+        dx = float(target.pos.x) - float(ally.pos.x)
+        dy = float(target.pos.y) - float(ally.pos.y)
+        if abs(dx) > abs(dy):
+            toward_action = 4 if dx > 0 else 5
+            away_action = 5 if dx > 0 else 4
+        else:
+            toward_action = 2 if dy > 0 else 3
+            away_action = 3 if dy > 0 else 2
+
+        if distance < float(melee_range):
+            desired = action == away_action
+        elif distance <= float(shoot_range):
+            desired = (
+                action == away_action
+                if cooldown > 1e-6
+                else action >= n_actions_no_attack
+            )
+        else:
+            desired = action == toward_action
+
+        score_sum += float(desired)
+
+    if alive == 0:
+        cache["ally_alive"] = float(count_alive_allies(env))
+        cache["enemy_alive"] = float(count_alive_enemies(env))
+        cache["ally_dmg"] = 0.0
+        return 0.0, cache
+
+    raw_mean = score_sum / float(alive)
+    weighted_bonus = float(weight) * raw_mean
+    cache["raw_bonus"] = weighted_bonus
+    cache["cooldown"] = cooldown_sum / float(alive)
+    cache["ally_alive"] = float(count_alive_allies(env))
+    cache["enemy_alive"] = float(count_alive_enemies(env))
+    cache["ally_dmg"] = 0.0
+    return weighted_bonus, cache
 
 def dmin_mean(self) -> float:
     """Average min distance from each alive ally to the nearest alive enemy.

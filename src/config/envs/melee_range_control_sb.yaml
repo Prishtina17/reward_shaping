@@ -34,6 +34,8 @@ env_args:
   max_shaping_ratio: 0.30
   rc_melee_r_default: 3.0
   rc_shoot_r_default: 6.0
+  rc_melee_only: True
+  log_shaping: True
 
 test_greedy: True
 test_nepisode: 32

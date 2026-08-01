@@ -36,7 +36,6 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         rc_melee_only: bool = True,
         **kwargs,
     ):
-        kwargs['move_amount'] = 3
         super().__init__(*args, **kwargs)
 
         self._rc_weight = float(rc_weight)
@@ -61,7 +60,10 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         self._shaping_cache.clear()
         self._first_allied_killed_step = -1.0
         self._first_enemy_killed_step = -1.0
-        return super().reset()
+        result = super().reset()
+        self.phi_prev = self._compute_phi_only()
+        self._shaping_cache.clear()
+        return result
 
     def step(self, actions):
         reward, terminated, info = super().step(actions)
@@ -77,7 +79,11 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         base = super().reward_battle()
         self._compute_state_bonus()
         rc_bonus_state_raw = float(self._pending_state_bonus)
-        phi_curr = self._compute_phi_only()
+        phi_curr = (
+            0.0
+            if self._episode_steps >= self.episode_limit
+            else self._compute_phi_only()
+        )
         shaped_delta_raw = float(self._rc_weight * ((self.rc_pb_gamma * phi_curr) - self.phi_prev))
 
         cap = self._max_ratio * max(1.0, abs(float(base)))

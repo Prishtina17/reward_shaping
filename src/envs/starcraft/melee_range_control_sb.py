@@ -36,7 +36,6 @@ class StateBasedRewardShaping(StarCraft2Env):
         rc_melee_only: bool = True,
         **kwargs,
     ):
-        kwargs['move_amount'] = 3
         super().__init__(*args, **kwargs)
 
         # параметры shaping

@@ -7,7 +7,6 @@ import torch as th
 from types import SimpleNamespace as SN
 from utils.logging import Logger
 from utils.timehelper import time_left, time_str
-from os.path import dirname, abspath
 
 from learners import REGISTRY as le_REGISTRY
 from runners import REGISTRY as r_REGISTRY
@@ -42,11 +41,16 @@ def run(_run, _config, _log):
     # configure tensorboard logger
     env_cfg_name = getattr(args, "env_config_name", None) or getattr(args, "env", "env")
     map_name = args.env_args.get("map_name", "map") if isinstance(args.env_args, dict) else "map"
+    seed = getattr(args, "seed", "unknown")
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    unique_token = f"{env_cfg_name}_{map_name}_{timestamp}"
+    unique_token = (
+        f"env={env_cfg_name}__map={map_name}__seed={seed}__timestamp={timestamp}"
+    )
     args.unique_token = unique_token
     if args.use_tensorboard:
-        tb_logs_direc = os.path.join(dirname(dirname(dirname(abspath(__file__)))), "results", "tb_logs")
+        tb_logs_direc = os.path.abspath(
+            os.path.join(args.local_results_path, "tb_logs")
+        )
         tb_exp_direc = os.path.join(tb_logs_direc, "{}").format(unique_token)
         logger.setup_tb(tb_exp_direc)
 
@@ -167,6 +171,19 @@ def run_sequential(args, logger):
     last_test_T = -args.test_interval - 1
     last_log_T = 0
     model_save_time = 0
+
+    def _save_model_checkpoint():
+        nonlocal model_save_time
+        model_save_time = runner.t_env
+        save_path = os.path.join(
+            args.local_results_path,
+            "models",
+            args.unique_token,
+            str(runner.t_env),
+        )
+        os.makedirs(save_path, exist_ok=True)
+        logger.console_logger.info("Saving models to {}".format(save_path))
+        learner.save_models(save_path)
 
     start_time = time.time()
     last_time = start_time
@@ -323,16 +340,10 @@ def run_sequential(args, logger):
             for _ in range(n_test_runs):
                 runner.run(test_mode=True)
 
-        if args.save_model and (runner.t_env - model_save_time >= args.save_model_interval or model_save_time == 0):
-            model_save_time = runner.t_env
-            save_path = os.path.join(args.local_results_path, "models", args.unique_token, str(runner.t_env))
-            #"results/models/{}".format(unique_token)
-            os.makedirs(save_path, exist_ok=True)
-            logger.console_logger.info("Saving models to {}".format(save_path))
-
-            # learner should handle saving/loading -- delegate actor save/load to mac,
-            # use appropriate filenames to do critics, optimizer states
-            learner.save_models(save_path)
+        if args.save_model and (
+            runner.t_env - model_save_time >= args.save_model_interval
+        ):
+            _save_model_checkpoint()
 
         episode += args.batch_size_run
 
@@ -350,6 +361,9 @@ def run_sequential(args, logger):
                 runner.t_env, episode
             )
         )
+
+    if args.save_model and model_save_time != runner.t_env:
+        _save_model_checkpoint()
 
     runner.close_env()
     logger.console_logger.info("Finished Training")

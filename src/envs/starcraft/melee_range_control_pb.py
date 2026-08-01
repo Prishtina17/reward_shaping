@@ -37,9 +37,9 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         rc_melee_r_default: float = 3.0,
         rc_shoot_r_default: float = 6.0,
         rc_melee_only: bool = True,
+        clip_potential_shaping: bool = False,
         **kwargs,
     ):
-        kwargs['move_amount'] = 3
         super().__init__(*args, **kwargs)
 
         # параметры shaping
@@ -50,6 +50,7 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         self._rc_r_shoot_def = float(rc_shoot_r_default)
 
         self._rc_melee_only = bool(rc_melee_only)
+        self._clip_potential_shaping = bool(clip_potential_shaping)
 
         # метрики и временные хранилища
         self.metrics = ShapingMetrics()
@@ -92,7 +93,10 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         self._first_allied_killed_step = -1.0
         self._first_enemy_killed_step = -1.0
 
-        return super().reset()
+        result = super().reset()
+        self.phi_prev = self._compute_rc_phi()
+        self._shaping_cache.clear()
+        return result
 
     def step(self, actions):
         # 1) позиционный бонус
@@ -119,14 +123,20 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
     def reward_battle(self) -> float:
         base = super().reward_battle()
 
-        phi_curr = self._compute_rc_phi()
+        phi_curr = (
+            0.0
+            if self._episode_steps >= self.episode_limit
+            else self._compute_rc_phi()
+        )
 
         delta = (self.rc_pb_gamma * phi_curr) - self.phi_prev
         shaped_delta = self._rc_weight * delta
 
-        cap = self._max_ratio * max(1.0, abs(float(base)))
-        clipped = float(np.clip(shaped_delta, -cap, +cap))
-        reward = float(base) + clipped
+        applied_delta = float(shaped_delta)
+        if self._clip_potential_shaping:
+            cap = self._max_ratio * max(1.0, abs(float(base)))
+            applied_delta = float(np.clip(applied_delta, -cap, +cap))
+        reward = float(base) + applied_delta
 
         self.phi_prev = float(phi_curr)
 
@@ -154,7 +164,7 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         update_shaping_metrics(
             self.metrics,
             base=float(base),
-            delta=float(clipped),
+            delta=float(applied_delta),
             cache=cache,
         )
         self._shaping_cache = {}

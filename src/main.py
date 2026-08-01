@@ -108,7 +108,12 @@ if __name__ == '__main__':
     # Save to disk by default for sacred
     map_name = parse_command(params, "env_args.map_name", config_dict['env_args']['map_name'])
     algo_name = parse_command(params, "name", config_dict['name']) 
-    file_obs_path = join(results_path, "sacred", map_name, algo_name)
+    local_results_path = parse_command(
+        params,
+        "local_results_path",
+        config_dict.get("local_results_path", results_path),
+    )
+    file_obs_path = join(local_results_path, "sacred", map_name, algo_name)
     
     logger.info("Saving to FileStorageObserver in {}.".format(file_obs_path))
     ex.observers.append(FileStorageObserver.create(file_obs_path))

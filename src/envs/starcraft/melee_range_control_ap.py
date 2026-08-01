@@ -8,6 +8,7 @@ from .utils import (
     ShapingMetrics,
     _is_melee,
     _nearest_enemy,
+    compute_kiting_action_bonus,
     ring_function,
     update_shaping_metrics,
     ally_damage_step,
@@ -37,7 +38,6 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         rc_melee_only: bool = True,
         **kwargs,
     ):
-        kwargs['move_amount'] = 3
         super().__init__(*args, **kwargs)
 
         self._rc_weight = float(rc_weight)
@@ -62,7 +62,10 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         self._shaping_cache.clear()
         self._first_allied_killed_step = -1.0
         self._first_enemy_killed_step = -1.0
-        return super().reset()
+        result = super().reset()
+        self.phi_prev = self._compute_rc_phi()
+        self._shaping_cache.clear()
+        return result
 
     def step(self, actions):
         self._compute_action_bonus(actions)
@@ -84,7 +87,11 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         base = super().reward_battle()
 
         rc_bonus_act_raw = float(self._pending_action_bonus)
-        phi_curr = self._compute_rc_phi()
+        phi_curr = (
+            0.0
+            if self._episode_steps >= self.episode_limit
+            else self._compute_rc_phi()
+        )
         shaped_delta_raw = float(self._rc_weight * ((self.rc_pb_gamma * phi_curr) - self.phi_prev))
 
         cap = self._max_ratio * max(1.0, abs(float(base)))
@@ -172,77 +179,16 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         return float(ring_raw_mean)
 
     def _compute_action_bonus(self, actions) -> None:
-        actions_int = [int(a) for a in actions]
-        rc_dmins: List[float] = []
-        cooldown_sum = 0.0
-        melee_ids = []
-        for j in range(self.n_enemies):
-            e = self.enemies.get(j, None)
-            if e is None:
-                continue
-            if (float(getattr(e, "health", 0.0)) + float(getattr(e, "shield", 0.0))) <= 1e-6:
-                continue
-            if (not self._rc_melee_only) or _is_melee(e.unit_type):
-                melee_ids.append(j)
-        if len(melee_ids) == 0:
-            self._pending_action_bonus = 0.0
-            self._shaping_cache.setdefault("cooldown", 0.0)
-            self._shaping_cache["cooldown"] = 0.0
-            self._shaping_cache["ally_alive"] = float(count_alive_allies(self))
-            self._shaping_cache["enemy_alive"] = float(count_alive_enemies(self))
-            self._shaping_cache["ally_dmg"] = 0.0
-            return
-
-        n_alive = 0
-        score_sum = 0.0
-        for i, action in enumerate(actions_int):
-            ally = self.agents.get(i, None)
-            if ally is None or float(getattr(ally, "health", 0.0)) <= 1e-6:
-                continue
-            n_alive += 1
-            cooldown_sum += float(getattr(ally, "weapon_cooldown", 0.0))
-            dmin, j_near = _nearest_enemy(self, ally, melee_ids)
-            rc_dmins.append(dmin)
-            target = self.enemies.get(j_near)
-            if target is None:
-                continue
-            dx = target.pos.x - ally.pos.x
-            dy = target.pos.y - ally.pos.y
-
-            action_num = 0
-            if abs(dx) > abs(dy):
-                action_num = 4 if dx < 0 else 5
-            else:
-                action_num = 2 if dy < 0 else 3
-
-            score = 0
-            if 3.0 <= dmin <= 7.0:
-                if getattr(ally, "weapon_cooldown", 0.0) > 0:
-                    if action_num == action:
-                        score = 1
-                else:
-                    if action > 5:
-                        score = 1
-            else:
-                if action_num == action:
-                    score = 1
-
-            score_sum += score
-
-        if n_alive == 0:
-            self._pending_action_bonus = 0.0
-            self._shaping_cache.setdefault("cooldown", 0.0)
-            self._shaping_cache["ally_alive"] = float(count_alive_allies(self))
-            self._shaping_cache["enemy_alive"] = float(count_alive_enemies(self))
-            self._shaping_cache["ally_dmg"] = 0.0
-            return
-        rc_raw_mean = (score_sum / n_alive) * float(self._rc_weight)
-        self._pending_action_bonus = float(rc_raw_mean)
-        self._shaping_cache.setdefault("cooldown", 0.0)
-        self._shaping_cache["cooldown"] = float(cooldown_sum / n_alive) if n_alive > 0 else 0.0
-        self._shaping_cache["ally_alive"] = float(count_alive_allies(self))
-        self._shaping_cache["enemy_alive"] = float(count_alive_enemies(self))
-        self._shaping_cache["ally_dmg"] = 0.0
+        bonus, cache = compute_kiting_action_bonus(
+            self,
+            actions,
+            weight=self._rc_weight,
+            melee_only=self._rc_melee_only,
+            melee_range=self._rc_r_melee_def,
+            shoot_range=self._rc_r_shoot_def,
+        )
+        self._pending_action_bonus = float(bonus)
+        self._shaping_cache = cache
 
     def _episode_metrics_payload(self, steps: int) -> Dict[str, float]:
         fa = self._first_allied_killed_step if self._first_allied_killed_step >= 0 else 0.0

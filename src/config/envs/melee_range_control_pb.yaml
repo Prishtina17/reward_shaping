@@ -35,6 +35,9 @@ env_args:
   rc_pb_gamma: 0.99
   rc_melee_r_default: 3.0
   rc_shoot_r_default: 6.0
+  rc_melee_only: True
+  clip_potential_shaping: False
+  log_shaping: True
 
 test_greedy: True
 test_nepisode: 32
