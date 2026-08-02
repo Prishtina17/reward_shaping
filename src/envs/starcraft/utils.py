@@ -10,111 +10,210 @@ import numpy as np
 
 
 @dataclass
-class ShapingMetrics:
-    """Lightweight container for per-step shaping diagnostics."""
+class RewardShapingEpisodeMetrics:
+    """Episode-level diagnostics for decomposed reward shaping components.
 
-    base: float = 0.0
-    delta: float = 0.0
-    ratio_abs: float = 0.0
-    raw_bonus: float = 0.0
-    dmin_mean: float = 0.0
-    dmin_last: float = 0.0
-    cooldown: float = 0.0
-    ally_alive: float = 0.0
-    ally_dmg: float = 0.0
-    enemy_alive: float = 0.0
-    first_allied_killed: float = 0.0
-    first_enemy_killed: float = 0.0
+    PyMARL2 only aggregates ``info`` from terminal transitions.  Keeping the
+    accumulator in the environment makes every exported value describe the
+    complete episode rather than the final transition.
+    """
+
+    steps: int = 0
+    base_return: float = 0.0
+    base_abs_sum: float = 0.0
+    action_return: float = 0.0
+    state_return: float = 0.0
+    potential_return: float = 0.0
+    total_raw_return: float = 0.0
+    total_applied_return: float = 0.0
+    total_applied_abs_sum: float = 0.0
+    negative_steps: int = 0
+    clipped_steps: int = 0
+    action_match_sum: float = 0.0
+    action_match_count: int = 0
+    state_score_sum: float = 0.0
+    state_score_count: int = 0
+    potential_value_sum: float = 0.0
+    potential_value_count: int = 0
+    _last_base: float = 0.0
+    _last_raw: float = 0.0
+    _last_applied: float = 0.0
 
     def reset(self) -> None:
-        self.base = 0.0
-        self.delta = 0.0
-        self.ratio_abs = 0.0
-        self.raw_bonus = 0.0
-        self.dmin_mean = 0.0
-        self.dmin_last = 0.0
-        self.cooldown = 0.0
-        self.ally_alive = 0.0
-        self.ally_dmg = 0.0
-        self.enemy_alive = 0.0
-        self.first_allied_killed = 0.0
-        self.first_enemy_killed = 0.0
+        self.steps = 0
+        self.base_return = 0.0
+        self.base_abs_sum = 0.0
+        self.action_return = 0.0
+        self.state_return = 0.0
+        self.potential_return = 0.0
+        self.total_raw_return = 0.0
+        self.total_applied_return = 0.0
+        self.total_applied_abs_sum = 0.0
+        self.negative_steps = 0
+        self.clipped_steps = 0
+        self.action_match_sum = 0.0
+        self.action_match_count = 0
+        self.state_score_sum = 0.0
+        self.state_score_count = 0
+        self.potential_value_sum = 0.0
+        self.potential_value_count = 0
+        self._last_base = 0.0
+        self._last_raw = 0.0
+        self._last_applied = 0.0
 
-    def to_dict(self) -> Dict[str, float]:
-        payload = {
-            "shaping/base": self.base,
-            "shaping/delta": self.delta,
-            "shaping/ratio_abs": self.ratio_abs,
-            "shaping/raw_bonus": self.raw_bonus,
-            "shaping/dmin_mean": self.dmin_mean,
-            "shaping/cooldown": self.cooldown,
-            "shaping/ally_alive": self.ally_alive,
-            "shaping/ally_dmg": self.ally_dmg,
-            "shaping/enemy_alive": self.enemy_alive,
-            "shaping/first_allied_killed": self.first_allied_killed,
-            "shaping/first_enemy_killed": self.first_enemy_killed,
+    def record(
+        self,
+        *,
+        base: float,
+        action: float = 0.0,
+        state: float = 0.0,
+        potential: float = 0.0,
+        total_raw: Optional[float] = None,
+        total_applied: Optional[float] = None,
+        action_match: Optional[float] = None,
+        state_score: Optional[float] = None,
+        potential_value: Optional[float] = None,
+    ) -> None:
+        action = float(action)
+        state = float(state)
+        potential = float(potential)
+        raw = action + state + potential if total_raw is None else float(total_raw)
+        applied = raw if total_applied is None else float(total_applied)
+        base = float(base)
+
+        self.steps += 1
+        self.base_return += base
+        self.base_abs_sum += abs(base)
+        self.action_return += action
+        self.state_return += state
+        self.potential_return += potential
+        self.total_raw_return += raw
+        self.total_applied_return += applied
+        self.total_applied_abs_sum += abs(applied)
+        self.negative_steps += int(applied < -1e-12)
+        self.clipped_steps += int(abs(applied - raw) > 1e-12)
+        self._last_base = base
+        self._last_raw = raw
+        self._last_applied = applied
+
+        if action_match is not None:
+            self.action_match_sum += float(action_match)
+            self.action_match_count += 1
+        if state_score is not None:
+            self.state_score_sum += float(state_score)
+            self.state_score_count += 1
+        if potential_value is not None:
+            self.potential_value_sum += float(potential_value)
+            self.potential_value_count += 1
+
+    @property
+    def last_applied(self) -> float:
+        return float(self._last_applied)
+
+    def reconcile_last_transition(self, *, base: float, applied: float) -> None:
+        """Replace the last transition totals after terminal reward handling.
+
+        ``StarCraft2Env.step`` adds win/defeat rewards and applies reward
+        scaling after ``reward_battle`` returns.  This reconciliation keeps
+        the episode decomposition aligned with the reward actually returned
+        to the learner while retaining unscaled units in the diagnostics.
+        """
+        if self.steps <= 0:
+            return
+
+        base = float(base)
+        applied = float(applied)
+        self.base_return += base - self._last_base
+        self.base_abs_sum += abs(base) - abs(self._last_base)
+        self.total_applied_return += applied - self._last_applied
+        self.total_applied_abs_sum += abs(applied) - abs(self._last_applied)
+        self.negative_steps += int(applied < -1e-12) - int(
+            self._last_applied < -1e-12
+        )
+        self.clipped_steps += int(abs(applied - self._last_raw) > 1e-12) - int(
+            abs(self._last_applied - self._last_raw) > 1e-12
+        )
+        self._last_base = base
+        self._last_applied = applied
+
+    def to_info(self) -> Dict[str, float]:
+        steps = max(1, self.steps)
+        return {
+            "rc/episode_steps": float(self.steps),
+            "rc/base_return": float(self.base_return),
+            "rc/action_return": float(self.action_return),
+            "rc/state_return": float(self.state_return),
+            "rc/potential_return": float(self.potential_return),
+            "rc/total_raw_return": float(self.total_raw_return),
+            "rc/total_applied_return": float(self.total_applied_return),
+            "rc/action_per_step": float(self.action_return / steps),
+            "rc/state_per_step": float(self.state_return / steps),
+            "rc/potential_per_step": float(self.potential_return / steps),
+            "rc/total_applied_per_step": float(self.total_applied_return / steps),
+            "rc/applied_abs_per_step": float(self.total_applied_abs_sum / steps),
+            "rc/negative_fraction": float(self.negative_steps / steps),
+            "rc/clipped_fraction": float(self.clipped_steps / steps),
+            "rc/applied_abs_to_base_abs_ratio": float(
+                self.total_applied_abs_sum / max(1.0, self.base_abs_sum)
+            ),
+            "rc/action_match_fraction": float(
+                self.action_match_sum / max(1, self.action_match_count)
+            ),
+            "rc/state_score_per_step": float(
+                self.state_score_sum / max(1, self.state_score_count)
+            ),
+            "rc/potential_value_per_step": float(
+                self.potential_value_sum / max(1, self.potential_value_count)
+            ),
         }
-        return payload
 
 
-def update_shaping_metrics(
-    metrics: ShapingMetrics,
-    *,
-    base: float,
-    delta: float,
-    cache: Optional[Dict[str, Any]] = None,
+def clip_shaping_bonus(value: float, max_abs: float) -> float:
+    """Apply a fixed per-transition cap independent of sparse base rewards."""
+    max_abs = max(0.0, float(max_abs))
+    return float(np.clip(float(value), -max_abs, max_abs))
+
+
+def potential_shaping_bonus(
+    phi_prev: float,
+    phi_curr: float,
+    gamma: float,
+    weight: float = 1.0,
+) -> float:
+    """Return the policy-invariant potential difference in reward units."""
+    return float(weight) * (
+        float(gamma) * float(phi_curr) - float(phi_prev)
+    )
+
+
+def reconcile_terminal_reward(
+    env: Any,
+    metrics: RewardShapingEpisodeMetrics,
+    reward: float,
+    terminated: bool,
+    info: Optional[Dict[str, Any]],
 ) -> None:
-    """Populate diagnostic metrics used by StarCraft shaping environments."""
-    metrics.base = float(base)
-    metrics.delta = float(delta)
+    """Reconcile episode metrics with terminal outcome and reward scaling."""
+    if not terminated or metrics.steps <= 0:
+        return
 
-    denom = max(1.0, abs(float(base)))
-    metrics.ratio_abs = float(abs(float(delta)) / denom) if denom > 1e-9 else 0.0
+    scale = 1.0
+    if bool(getattr(env, "reward_scale", False)):
+        scale = float(env.max_reward) / float(env.reward_scale_rate)
+    unscaled_reward = float(reward) * scale
 
-    cache = cache or {}
-
-    raw_bonus = cache.get("raw_bonus", 0.0)
-    metrics.raw_bonus = float(raw_bonus)
-
-    dmins = cache.get("dmins", None)
-    if isinstance(dmins, (list, tuple, np.ndarray)) and len(dmins) > 0:
-        finite_vals = [float(d) for d in dmins if np.isfinite(d)]
-        if finite_vals:
-            metrics.dmin_mean = float(np.mean(finite_vals))
-            metrics.dmin_last = float(finite_vals[-1])
-        else:
-            metrics.dmin_mean = 0.0
-            metrics.dmin_last = 0.0
-    else:
-        metrics.dmin_mean = 0.0
-        metrics.dmin_last = 0.0
-
-    cooldown = cache.get("cooldown", None)
-    metrics.cooldown = float(cooldown) if cooldown is not None else 0.0
-
-    ally_alive = cache.get("ally_alive")
-    metrics.ally_alive = float(ally_alive) if ally_alive is not None else 0.0
-
-    ally_dmg = cache.get("ally_dmg")
-    if ally_dmg is not None:
-        metrics.ally_dmg += float(ally_dmg)
-
-    enemy_alive = cache.get("enemy_alive")
-    metrics.enemy_alive = float(enemy_alive) if enemy_alive is not None else 0.0
-
-    first_ally = cache.get("first_allied_killed")
-    try:
-        fa = float(first_ally) if first_ally is not None else 0.0
-    except Exception:
-        fa = 0.0
-    metrics.first_allied_killed = fa if fa >= 0.0 else 0.0
-
-    first_enemy = cache.get("first_enemy_killed")
-    try:
-        fe = float(first_enemy) if first_enemy is not None else 0.0
-    except Exception:
-        fe = 0.0
-    metrics.first_enemy_killed = fe if fe >= 0.0 else 0.0
+    info = info or {}
+    battle_over = bool(info.get("battle_won", False)) or (
+        count_alive_allies(env) == 0 or count_alive_enemies(env) == 0
+    )
+    applied = metrics.last_applied
+    if bool(getattr(env, "reward_sparse", False)) and battle_over:
+        # Sparse terminal rewards replace, rather than augment, reward_battle.
+        applied = 0.0
+    metrics.reconcile_last_transition(
+        base=unscaled_reward - applied,
+        applied=applied,
+    )
 
 def extract_attack_targets(env: Any, actions) -> Tuple[List[int], List[bool]]:
     """Return targets chosen by agents and eligibility flags for focus-fire shaping."""
@@ -304,26 +403,22 @@ def ring_function(
     d: float,
     center: float = 5.25,
     half_width: float = 0.75,
-    slope: float = 0.15,
+    slope: float = 1.0,
 ) -> float:
-    """
-    Бублик с плато и квадратичным спадом.
-    По умолчанию зона [center - half_width, center + half_width].
-    Для melee/shoot можно задать center=(Rm+Rs)/2, half_width=(Rs-Rm)/2.
+    """Smooth signed score for staying between melee and shooting ranges.
 
-    :param d: расстояние до врага
-    :param center: центр плато (середина sweet spot)
-    :param half_width: половина ширины плато
-    :param slope: скорость квадратичного спада
-    :return: скор ∈ [-1, 1]
+    The score is positive strictly inside the band, zero on its boundaries,
+    and negative outside it.  The bounded tanh product avoids the previous
+    behaviour where states deep inside melee range still received a bonus.
     """
-    if half_width <= 0:
-        half_width = 1e-3
-    if abs(d - center) <= half_width:
-        return 1.0
-    dist = abs(d - center) - half_width
-    val = 1.0 - slope * (dist ** 1.5)
-    return max(-1.0, val)
+    half_width = max(1e-3, float(half_width))
+    slope = max(1e-6, float(slope))
+    lower = float(center) - half_width
+    upper = float(center) + half_width
+    return float(
+        math.tanh(slope * (float(d) - lower))
+        * math.tanh(slope * (upper - float(d)))
+    )
 
 
 def compute_ring_bonus_from_state(
@@ -335,7 +430,7 @@ def compute_ring_bonus_from_state(
 ) -> Tuple[float, Dict[str, Any]]:
     """
     Вычисляет позиционный бонус (ring) по текущему состоянию окружения.
-    Возвращает (weighted_bonus, cache) для использования в reward_battle и update_shaping_metrics.
+    Возвращает (weighted_bonus, cache) для reward_battle и episode-метрик.
     """
     cache: Dict[str, Any] = {"dmins": [], "raw_bonus": 0.0, "cooldown": 0.0}
     melee_ids: List[int] = []
@@ -528,7 +623,8 @@ def compute_kiting_action_bonus(
 
     raw_mean = score_sum / float(alive)
     weighted_bonus = float(weight) * raw_mean
-    cache["raw_bonus"] = weighted_bonus
+    cache["raw_bonus"] = raw_mean
+    cache["action_match_fraction"] = raw_mean
     cache["cooldown"] = cooldown_sum / float(alive)
     cache["ally_alive"] = float(count_alive_allies(env))
     cache["enemy_alive"] = float(count_alive_enemies(env))

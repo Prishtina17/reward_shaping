@@ -26,6 +26,20 @@ MANIFEST="${MANIFEST:-${RESULTS_ROOT}/completed_runs.tsv}"
 RESUME="${RESUME:-1}"
 DRY_RUN="${DRY_RUN:-0}"
 MAX_RUNS="${MAX_RUNS:-0}"
+ALLOW_DIRTY_RUN="${ALLOW_DIRTY_RUN:-0}"
+
+GIT_REVISION="$(git rev-parse --verify HEAD)"
+# Windows checkouts mounted in WSL can differ from the index only by CRLF/LF.
+# Ignore that representation detail, but still reject substantive tracked or
+# staged changes so every final run remains tied to one reproducible revision.
+if ! git diff --ignore-space-at-eol --quiet || ! git diff --cached --quiet; then
+  if [[ "${ALLOW_DIRTY_RUN}" != "1" ]]; then
+    echo "Refusing to run from a dirty tracked worktree." >&2
+    echo "Commit the protocol first, or use ALLOW_DIRTY_RUN=1 only for a disposable pilot." >&2
+    exit 2
+  fi
+  GIT_REVISION="${GIT_REVISION}-dirty"
+fi
 
 # 6h_vs_8z is intentionally excluded: it changes the unit matchup and is too
 # expensive for the final home-compute protocol. It can still be passed
@@ -70,6 +84,8 @@ mkdir -p "${RESULTS_ROOT}"
 mkdir -p "$(dirname "${MANIFEST}")"
 touch "${MANIFEST}"
 
+echo "[protocol] revision=${GIT_REVISION} algorithm=${ALG_CONFIG} manifest=${MANIFEST}"
+
 run_count=0
 for map_entry in "${MAP_CONFIGS[@]}"; do
   IFS=':' read -r map_name epsilon_anneal <<< "${map_entry}"
@@ -80,8 +96,13 @@ for map_entry in "${MAP_CONFIGS[@]}"; do
 
   for seed in "${SEED_VALUES[@]}"; do
     for env_config in "${ENV_CONFIGS[@]}"; do
-      printf -v run_key '%s\t%s\t%s\t%s\t%s' \
-        "${map_name}" "${env_config}" "${seed}" "${epsilon_anneal}" "${DIPLOMA_T_MAX}"
+      printf -v run_key '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
+        "${GIT_REVISION}" "${ALG_CONFIG}" "${PYTHON_BIN}" \
+        "${map_name}" "${env_config}" "${seed}" "${epsilon_anneal}" \
+        "${DIPLOMA_T_MAX}" "${DIPLOMA_TEST_INTERVAL}" \
+        "${DIPLOMA_TEST_NEPISODE}" "${DIPLOMA_LOG_INTERVAL}" \
+        "${DIPLOMA_RUNNER_LOG_INTERVAL}" "${DIPLOMA_LEARNER_LOG_INTERVAL}" \
+        "${SAVE_MODEL}" "${SAVE_MODEL_INTERVAL}"
       if [[ "${RESUME}" == "1" ]] && grep -Fqx "${run_key}" "${MANIFEST}"; then
         echo "[skip] ${map_name} ${env_config} seed=${seed} already completed"
         continue

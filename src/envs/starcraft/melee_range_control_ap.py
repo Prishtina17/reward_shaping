@@ -1,36 +1,25 @@
-# envs/starcraft/melee_range_control_ap.py
 from __future__ import annotations
-from typing import Dict, List
-
-import numpy as np
-
-from .utils import (
-    ShapingMetrics,
-    _is_melee,
-    _nearest_enemy,
-    compute_kiting_action_bonus,
-    ring_function,
-    update_shaping_metrics,
-    ally_damage_step,
-    enemy_damage_step,
-    count_alive_allies,
-    count_alive_enemies,
-)
 
 from .StarCraft2Env import StarCraft2Env
+from .utils import (
+    RewardShapingEpisodeMetrics,
+    clip_shaping_bonus,
+    compute_kiting_action_bonus,
+    compute_ring_bonus_from_state,
+    potential_shaping_bonus,
+    reconcile_terminal_reward,
+)
 
 
 class Starcraft2EnvRewardShaping(StarCraft2Env):
-    """Action + Potential shaping.
-    Action shaping follows a simple rule-based controller toward/away shooting zone.
-    Potential shaping uses ring-based state potential phi(d_min) with discount rc_pb_gamma.
-    """
+    """Action advice combined with a distance-control potential."""
 
     def __init__(
         self,
         *args,
-        rc_weight: float = 0.7,
-        max_shaping_ratio: float = 0.30,
+        rc_weight: float = 1.0,
+        max_shaping_abs: float = 1.0,
+        max_shaping_ratio=None,
         log_shaping: bool = True,
         rc_pb_gamma: float = 0.99,
         rc_melee_r_default: float = 3.0,
@@ -39,147 +28,31 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-
         self._rc_weight = float(rc_weight)
-        self._max_ratio = float(max_shaping_ratio)
+        self._max_shaping_abs = float(
+            max_shaping_abs if max_shaping_ratio is None else max_shaping_ratio
+        )
         self._log = bool(log_shaping)
-        self._rc_melee_only = bool(rc_melee_only)
+        self.rc_pb_gamma = float(rc_pb_gamma)
         self._rc_r_melee_def = float(rc_melee_r_default)
         self._rc_r_shoot_def = float(rc_shoot_r_default)
+        self._rc_melee_only = bool(rc_melee_only)
 
-        self.metrics = ShapingMetrics()
-        self._pending_action_bonus: float = 0.0
-        self._shaping_cache: Dict[str, object] = {}
-        self.rc_pb_gamma = float(rc_pb_gamma)
+        self._rc_episode = RewardShapingEpisodeMetrics()
+        self._pending_action_bonus = 0.0
+        self._pending_action_match = None
         self.phi_prev = 0.0
-        self._first_allied_killed_step = -1.0
-        self._first_enemy_killed_step = -1.0
 
     def reset(self):
-        self.metrics.reset()
+        self._rc_episode.reset()
         self._pending_action_bonus = 0.0
-        self.phi_prev = 0.0
-        self._shaping_cache.clear()
-        self._first_allied_killed_step = -1.0
-        self._first_enemy_killed_step = -1.0
+        self._pending_action_match = None
         result = super().reset()
-        self.phi_prev = self._compute_rc_phi()
-        self._shaping_cache.clear()
+        self.phi_prev = self._potential(terminal=False)
         return result
 
     def step(self, actions):
-        self._compute_action_bonus(actions)
-
-        reward, terminated, info = super().step(actions)
-
-        if info is None:
-            info = {}
-
-        if self._log:
-            info.update(self.metrics.to_dict())
-
-        if terminated:
-            info.update(self._episode_metrics_payload(max(1, self._episode_steps)))
-            
-        return reward, terminated, info
-
-    def reward_battle(self) -> float:
-        base = super().reward_battle()
-
-        rc_bonus_act_raw = float(self._pending_action_bonus)
-        phi_curr = (
-            0.0
-            if self._episode_steps >= self.episode_limit
-            else self._compute_rc_phi()
-        )
-        shaped_delta_raw = float(self._rc_weight * ((self.rc_pb_gamma * phi_curr) - self.phi_prev))
-
-        cap = self._max_ratio * max(1.0, abs(float(base)))
-        total_bonus = rc_bonus_act_raw + shaped_delta_raw
-        total_bonus = float(np.clip(total_bonus, -cap, +cap))
-
-        shaped = float(base) + total_bonus
-
-        cache = dict(self._shaping_cache) if isinstance(self._shaping_cache, dict) else {}
-
-        alive_allies = count_alive_allies(self)
-        alive_enemies = count_alive_enemies(self)
-        cache["ally_alive"] = float(alive_allies)
-        cache["enemy_alive"] = float(alive_enemies)
-
-        dmg_to_enemies, enemy_kills = enemy_damage_step(self)
-        ally_dmg_total = float(np.sum(dmg_to_enemies)) if getattr(dmg_to_enemies, "size", 0) > 0 else 0.0
-        cache["ally_dmg"] = ally_dmg_total
-
-        _, ally_deaths = ally_damage_step(self)
-        if ally_deaths > 0 and self._first_allied_killed_step < 0:
-            self._first_allied_killed_step = float(self._episode_steps)
-        if enemy_kills > 0 and self._first_enemy_killed_step < 0:
-            self._first_enemy_killed_step = float(self._episode_steps)
-
-        update_shaping_metrics(
-            self.metrics,
-            base=float(base),
-            delta=float(total_bonus),
-            cache=cache,
-        )
-        self._shaping_cache = {}
-        self._pending_action_bonus = 0.0
-        self.phi_prev = float(phi_curr)
-        return shaped
-
-    def _compute_rc_phi(self) -> float:
-        ring_raw_sum = 0.0
-        rc_dmins: List[float] = []
-        cache: Dict[str, object] = {"dmins": [], "raw_bonus": 0.0, "cooldown": 0.0}
-        cooldown_sum = 0.0
-
-        melee_ids = []
-        for j in range(self.n_enemies):
-            e = self.enemies.get(j, None)
-            if e is None:
-                continue
-            if (float(getattr(e, "health", 0.0)) + float(getattr(e, "shield", 0.0))) <= 1e-6:
-                continue
-            if (not self._rc_melee_only) or _is_melee(e.unit_type):
-                melee_ids.append(j)
-        if len(melee_ids) == 0:
-            cache["ally_alive"] = float(count_alive_allies(self))
-            cache["enemy_alive"] = float(count_alive_enemies(self))
-            cache["ally_dmg"] = 0.0
-            self._shaping_cache = cache
-            return 0.0
-
-        center = (self._rc_r_melee_def + self._rc_r_shoot_def) / 2.0
-        half_width = max(1e-3, (self._rc_r_shoot_def - self._rc_r_melee_def) / 2.0)
-        n_alive = 0
-        for i, ally in self.agents.items():
-            if float(getattr(ally, "health", 0.0)) <= 1e-6:
-                continue
-            n_alive += 1
-            dmin, _ = _nearest_enemy(self, ally, melee_ids)
-            rc_dmins.append(dmin)
-            ring_raw_sum += ring_function(dmin, center=center, half_width=half_width)
-            cooldown_sum += float(getattr(ally, "weapon_cooldown", 0.0))
-
-        if n_alive == 0:
-            cache["ally_alive"] = float(count_alive_allies(self))
-            cache["enemy_alive"] = float(count_alive_enemies(self))
-            cache["ally_dmg"] = 0.0
-            self._shaping_cache = cache
-            return 0.0
-        ring_raw_mean = ring_raw_sum / n_alive
-        cache["dmins"] = list(rc_dmins)
-        cache["raw_bonus"] = float(ring_raw_mean)
-        cache["cooldown"] = float(cooldown_sum / n_alive) if n_alive > 0 else 0.0
-        cache["ally_alive"] = float(count_alive_allies(self))
-        cache["enemy_alive"] = float(count_alive_enemies(self))
-        cache["ally_dmg"] = 0.0
-        self._shaping_cache = cache
-        return float(ring_raw_mean)
-
-    def _compute_action_bonus(self, actions) -> None:
-        bonus, cache = compute_kiting_action_bonus(
+        action_bonus, cache = compute_kiting_action_bonus(
             self,
             actions,
             weight=self._rc_weight,
@@ -187,13 +60,58 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
             melee_range=self._rc_r_melee_def,
             shoot_range=self._rc_r_shoot_def,
         )
-        self._pending_action_bonus = float(bonus)
-        self._shaping_cache = cache
+        self._pending_action_bonus = float(action_bonus)
+        self._pending_action_match = cache.get("action_match_fraction")
 
-    def _episode_metrics_payload(self, steps: int) -> Dict[str, float]:
-        fa = self._first_allied_killed_step if self._first_allied_killed_step >= 0 else 0.0
-        fe = self._first_enemy_killed_step if self._first_enemy_killed_step >= 0 else 0.0
-        return {
-            "shaping/first_allied_killed": float(fa),
-            "shaping/first_enemy_killed": float(fe),
-        }
+        reward, terminated, info = super().step(actions)
+        info = {} if info is None else info
+        reconcile_terminal_reward(self, self._rc_episode, reward, terminated, info)
+        if terminated:
+            self.phi_prev = 0.0
+            if self._log:
+                info.update(self._rc_episode.to_info())
+        return reward, terminated, info
+
+    def reward_battle(self) -> float:
+        base = float(super().reward_battle())
+        action_bonus = float(self._pending_action_bonus)
+        terminal = self._episode_steps >= self.episode_limit
+        phi_curr = self._potential(terminal=terminal)
+        potential_bonus = potential_shaping_bonus(
+            self.phi_prev,
+            phi_curr,
+            self.rc_pb_gamma,
+            self._rc_weight,
+        )
+        total_raw = action_bonus + potential_bonus
+        applied = clip_shaping_bonus(total_raw, self._max_shaping_abs)
+
+        self._rc_episode.record(
+            base=base,
+            action=action_bonus,
+            potential=potential_bonus,
+            total_raw=total_raw,
+            total_applied=applied,
+            action_match=self._pending_action_match,
+            potential_value=phi_curr,
+        )
+        self._pending_action_bonus = 0.0
+        self._pending_action_match = None
+        self.phi_prev = float(phi_curr)
+        return base + applied
+
+    def _potential(self, *, terminal: bool) -> float:
+        if terminal:
+            return 0.0
+        center = (self._rc_r_melee_def + self._rc_r_shoot_def) / 2.0
+        half_width = max(
+            1e-3, (self._rc_r_shoot_def - self._rc_r_melee_def) / 2.0
+        )
+        phi, _ = compute_ring_bonus_from_state(
+            self,
+            1.0,
+            self._rc_melee_only,
+            center,
+            half_width,
+        )
+        return float(phi)

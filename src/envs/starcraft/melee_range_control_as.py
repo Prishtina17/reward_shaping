@@ -1,33 +1,24 @@
-# envs/starcraft/melee_range_control_as.py
 from __future__ import annotations
-from typing import Dict, List
-
-import numpy as np
-
-from .utils import (
-    ShapingMetrics,
-    _is_melee,
-    _nearest_enemy,
-    compute_kiting_action_bonus,
-    ring_function,
-    update_shaping_metrics,
-    ally_damage_step,
-    enemy_damage_step,
-    count_alive_allies,
-    count_alive_enemies,
-)
 
 from .StarCraft2Env import StarCraft2Env
+from .utils import (
+    RewardShapingEpisodeMetrics,
+    clip_shaping_bonus,
+    compute_kiting_action_bonus,
+    compute_ring_bonus_from_state,
+    reconcile_terminal_reward,
+)
 
 
 class Starcraft2EnvRewardShaping(StarCraft2Env):
-    """Action + State reward shaping without potential term."""
+    """Action advice plus a signed state-distance component."""
 
     def __init__(
         self,
         *args,
-        rc_weight: float = 0.7,
-        max_shaping_ratio: float = 0.30,
+        rc_weight: float = 1.0,
+        max_shaping_abs: float = 1.0,
+        max_shaping_ratio=None,
         log_shaping: bool = True,
         rc_melee_r_default: float = 3.0,
         rc_shoot_r_default: float = 6.0,
@@ -35,94 +26,27 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-
         self._rc_weight = float(rc_weight)
-        self._max_ratio = float(max_shaping_ratio)
+        self._max_shaping_abs = float(
+            max_shaping_abs if max_shaping_ratio is None else max_shaping_ratio
+        )
         self._log = bool(log_shaping)
-        self._rc_melee_only = bool(rc_melee_only)
         self._rc_r_melee_def = float(rc_melee_r_default)
         self._rc_r_shoot_def = float(rc_shoot_r_default)
+        self._rc_melee_only = bool(rc_melee_only)
 
-        self.metrics = ShapingMetrics()
-        self._pending_action_bonus: float = 0.0
-        self._pending_state_bonus: float = 0.0
-        self._action_cache: Dict[str, object] = {}
-        self._state_cache: Dict[str, object] = {}
-        self._first_allied_killed_step = -1.0
-        self._first_enemy_killed_step = -1.0
+        self._rc_episode = RewardShapingEpisodeMetrics()
+        self._pending_action_bonus = 0.0
+        self._pending_action_match = None
 
     def reset(self):
-        self.metrics.reset()
+        self._rc_episode.reset()
         self._pending_action_bonus = 0.0
-        self._pending_state_bonus = 0.0
-        self._action_cache = {}
-        self._state_cache = {}
-        self._first_allied_killed_step = -1.0
-        self._first_enemy_killed_step = -1.0
+        self._pending_action_match = None
         return super().reset()
 
     def step(self, actions):
-        self._compute_action_bonus(actions)
-        reward, terminated, info = super().step(actions)
-        if info is None:
-            info = {}
-        if self._log:
-            info.update(self.metrics.to_dict())
-        if terminated:
-            info.update(self._episode_metrics_payload(max(1, self._episode_steps)))
-        return reward, terminated, info
-
-    def reward_battle(self) -> float:
-        base = super().reward_battle()
-        self._compute_state_bonus()
-        bonus_action = float(self._pending_action_bonus)
-        bonus_state = float(self._pending_state_bonus)
-        total_bonus = bonus_action + bonus_state
-
-        cap = self._max_ratio * max(1.0, abs(float(base)))
-        total_bonus = float(np.clip(total_bonus, -cap, +cap))
-
-        shaped = float(base) + total_bonus
-
-        cache: Dict[str, object] = {}
-        if self._state_cache:
-            cache.update(self._state_cache)
-        if "dmins" not in cache and self._action_cache.get("dmins"):
-            cache["dmins"] = list(self._action_cache["dmins"])
-        if "cooldown" not in cache and self._action_cache.get("cooldown") is not None:
-            cache["cooldown"] = float(self._action_cache["cooldown"])
-
-        cache["raw_bonus_action"] = float(self._action_cache.get("raw_bonus_action", 0.0))
-        cache["raw_bonus_state"] = float(self._state_cache.get("raw_bonus_state", 0.0))
-        cache["raw_bonus"] = cache["raw_bonus_action"] + cache["raw_bonus_state"]
-
-        cache["ally_alive"] = float(count_alive_allies(self))
-        cache["enemy_alive"] = float(count_alive_enemies(self))
-
-        dmg_to_enemies, enemy_kills = enemy_damage_step(self)
-        cache["ally_dmg"] = float(np.sum(dmg_to_enemies)) if getattr(dmg_to_enemies, "size", 0) > 0 else 0.0
-
-        _, ally_deaths = ally_damage_step(self)
-        if ally_deaths > 0 and self._first_allied_killed_step < 0:
-            self._first_allied_killed_step = float(self._episode_steps)
-        if enemy_kills > 0 and self._first_enemy_killed_step < 0:
-            self._first_enemy_killed_step = float(self._episode_steps)
-
-        update_shaping_metrics(
-            self.metrics,
-            base=float(base),
-            delta=float(total_bonus),
-            cache=cache,
-        )
-
-        self._pending_action_bonus = 0.0
-        self._pending_state_bonus = 0.0
-        self._action_cache = {}
-        self._state_cache = {}
-        return shaped
-
-    def _compute_action_bonus(self, actions) -> None:
-        bonus, cache = compute_kiting_action_bonus(
+        action_bonus, cache = compute_kiting_action_bonus(
             self,
             actions,
             weight=self._rc_weight,
@@ -130,67 +54,46 @@ class Starcraft2EnvRewardShaping(StarCraft2Env):
             melee_range=self._rc_r_melee_def,
             shoot_range=self._rc_r_shoot_def,
         )
-        self._pending_action_bonus = float(bonus)
-        cache["raw_bonus_action"] = float(cache.get("raw_bonus", 0.0))
-        self._action_cache = cache
+        self._pending_action_bonus = float(action_bonus)
+        self._pending_action_match = cache.get("action_match_fraction")
 
-    def _compute_state_bonus(self) -> None:
-        self._state_cache = {}
-        melee_ids = []
-        rc_dmins: List[float] = []
-        ring_raw_sum = 0.0
-        cooldown_sum = 0.0
-        for j in range(self.n_enemies):
-            e = self.enemies.get(j, None)
-            if e is None:
-                continue
-            if (float(getattr(e, "health", 0.0)) + float(getattr(e, "shield", 0.0))) <= 1e-6:
-                continue
-            if (not self._rc_melee_only) or _is_melee(e.unit_type):
-                melee_ids.append(j)
-        if len(melee_ids) == 0:
-            self._pending_state_bonus = 0.0
-            self._state_cache = {
-                "dmins": [],
-                "raw_bonus_state": 0.0,
-                "cooldown": 0.0,
-            }
-            return
+        reward, terminated, info = super().step(actions)
+        info = {} if info is None else info
+        reconcile_terminal_reward(self, self._rc_episode, reward, terminated, info)
+        if terminated and self._log:
+            info.update(self._rc_episode.to_info())
+        return reward, terminated, info
 
+    def reward_battle(self) -> float:
+        base = float(super().reward_battle())
+        action_bonus = float(self._pending_action_bonus)
+        center, half_width = self._distance_band()
+        state_bonus, cache = compute_ring_bonus_from_state(
+            self,
+            self._rc_weight,
+            self._rc_melee_only,
+            center,
+            half_width,
+        )
+        total_raw = action_bonus + state_bonus
+        applied = clip_shaping_bonus(total_raw, self._max_shaping_abs)
+
+        self._rc_episode.record(
+            base=base,
+            action=action_bonus,
+            state=state_bonus,
+            total_raw=total_raw,
+            total_applied=applied,
+            action_match=self._pending_action_match,
+            state_score=cache.get("raw_bonus"),
+        )
+        self._pending_action_bonus = 0.0
+        self._pending_action_match = None
+        return base + applied
+
+    def _distance_band(self):
         center = (self._rc_r_melee_def + self._rc_r_shoot_def) / 2.0
-        half_width = max(1e-3, (self._rc_r_shoot_def - self._rc_r_melee_def) / 2.0)
-        n_alive = 0
-        for i, ally in self.agents.items():
-            if float(getattr(ally, "health", 0.0)) <= 1e-6:
-                continue
-            n_alive += 1
-            dmin, _ = _nearest_enemy(self, ally, melee_ids)
-            rc_dmins.append(dmin)
-            ring_raw_sum += ring_function(dmin, center=center, half_width=half_width)
-            cooldown_sum += float(getattr(ally, "weapon_cooldown", 0.0))
-
-        if n_alive == 0:
-            self._pending_state_bonus = 0.0
-            self._state_cache = {
-                "dmins": list(rc_dmins),
-                "raw_bonus_state": 0.0,
-                "cooldown": 0.0,
-            }
-            return
-
-        ring_raw_mean = ring_raw_sum / n_alive
-        self._pending_state_bonus = float(self._rc_weight * ring_raw_mean)
-        self._state_cache = {
-            "dmins": list(rc_dmins),
-            "raw_bonus_state": float(ring_raw_mean),
-            "cooldown": float(cooldown_sum / n_alive) if n_alive > 0 else 0.0,
-        }
-
-    def _episode_metrics_payload(self, steps: int) -> Dict[str, float]:
-        fa = self._first_allied_killed_step if self._first_allied_killed_step >= 0 else 0.0
-        fe = self._first_enemy_killed_step if self._first_enemy_killed_step >= 0 else 0.0
-        return {
-            "shaping/first_allied_killed": float(fa),
-            "shaping/first_enemy_killed": float(fe),
-        }
-
+        half_width = max(
+            1e-3, (self._rc_r_shoot_def - self._rc_r_melee_def) / 2.0
+        )
+        return center, half_width

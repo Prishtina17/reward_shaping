@@ -21,7 +21,9 @@ state-based, action-based и potential-based reward shaping в PyMARL2/QMIX.
 - [x] Добавить seed в идентификатор TensorBoard/checkpoint и агрегировать все
   seeds, а не выбирать последний запуск.
 - [x] Добавить manifest и resume в `run_all_shapings.sh`, чтобы завершенные
-  комбинации не пересчитывались после сбоя или перезагрузки.
+  комбинации не пересчитывались после сбоя или перезагрузки. Identity включает
+  commit SHA и все параметры протокола; dirty tracked-worktree для финального
+  запуска запрещен, поэтому старые и новые реализации не смешиваются.
 - [x] Сохранять checkpoint в конце каждого обучения, даже если интервал
   checkpoint не совпал с последним `t_env`.
 - [x] Исключить `6h_vs_8z` из обязательного домашнего финального прогона. Карта
@@ -38,10 +40,33 @@ state-based, action-based и potential-based reward shaping в PyMARL2/QMIX.
   нулевой терминальный потенциал (включая timeout) и не клиппировать компонент
   по умолчанию. Нелинейный clip разрушает телескопическую policy-invariance.
 - [x] Исправить задержку state-бонуса на один transition в ASP.
-- [x] Выполнить короткий SC2 smoke на baseline и на каждом из семи shaping env.
+- [x] Сделать state-based ring знаковым: положительный сигнал только внутри
+  диапазона 3–6, ноль на границах и штраф вне диапазона. Старая положительная
+  «юбка» внутри melee-зоны поощряла часть явно плохих состояний.
+- [x] Оставить AB в финальном наборе и исправить его реализацию. То, что старый
+  AB был хуже baseline в конфаундированном one-seed прогоне, не является
+  основанием удалять заранее определенную ablation после просмотра результата.
+- [x] Зафиксировать `rc_weight=1` для всех shaping-вариантов как простую
+  единичную шкалу, выбранную до финального прогона. Не проводить отдельный
+  tuning sweep и не заявлять, что коэффициент оптимален.
+- [x] Заменить зависимый от sparse base reward `max_shaping_ratio` на единый
+  абсолютный cap `max_shaping_abs=1.0`. Единичный cap сохраняет градацию
+  нормированных AB/SB-сигналов и ограничивает только сумму в комбинациях.
+  Чистый PBRS остается без clip по умолчанию.
+- [x] Разделить метрики среды `shaping/*` и эпизодную декомпозицию награды
+  `rc/*`. Логировать суммы AB/SB/PBRS, raw/applied shaping, долю отрицательных и
+  clipped transitions и action-match за весь эпизод, а не snapshot последнего
+  transition.
+- [x] Пометить старые `final_tb_logs` как exploratory: старые `shaping/*` частично
+  были snapshot последнего transition, а конфиги отличались по movement и seed.
+- [x] Повторить короткий SC2 smoke на baseline и каждом из семи shaping env после
+  исправления знака ring, cap и episode-метрик; проверить появление `rc/*`.
 - [ ] Выполнить пилот в отдельном `RESULTS_ROOT` на 1–2 seeds; проверить
   длительность, место на диске, монотонность `t_env`, наличие всех test-метрик и
-  финальных checkpoint. Не смешивать пилот с финальными данными.
+  финальных checkpoint. Дополнительно проверить `rc/clipped_fraction` у
+  комбинаций: cap должен ограничивать редкие большие суммы, а не превращать
+  shaping в почти константный сигнал. Не смешивать пилот с финальными данными и
+  не подбирать вес по test win rate.
 - [ ] До финального запуска письменно заморозить commit SHA, карты, seeds,
   `t_max`, test interval, epsilon schedule, threshold rules и primary metric.
   После просмотра финальных результатов гиперпараметры не менять.
@@ -157,7 +182,7 @@ multi-seed результат на исправленном SMAC1. Один ка
 - [ ] После заморозки финальных результатов сократить дублирование семи env:
   общий `RewardShapingWrapper`/набор компонентов AB, SB, PBRS. Не делать большой
   refactor между пилотом и финальным прогоном.
-- [ ] Добавить unit tests для ring/potential, terminal transition, action advice,
+- [x] Добавить unit tests для ring/potential, terminal transition, action advice,
   melee taxonomy, config parity и seeded aggregation.
 - [ ] Добавить одну команду protocol validation: проверить одинаковые базовые
   env args, gamma, budget, интервалы и наличие пяти seeds до анализа.
