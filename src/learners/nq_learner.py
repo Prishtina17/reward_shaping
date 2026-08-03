@@ -1,4 +1,5 @@
 import copy
+import os
 from components.episode_buffer import EpisodeBatch
 from modules.mixers.nmix import Mixer
 from modules.mixers.vdn import VDNMixer
@@ -174,14 +175,40 @@ class NQLearner:
             
     def save_models(self, path):
         self.mac.save_models(path)
+        th.save(self.target_mac.agent.state_dict(), "{}/target_agent.th".format(path))
         if self.mixer is not None:
             th.save(self.mixer.state_dict(), "{}/mixer.th".format(path))
+            th.save(self.target_mixer.state_dict(), "{}/target_mixer.th".format(path))
         th.save(self.optimiser.state_dict(), "{}/opt.th".format(path))
+        th.save(
+            {"last_target_update_episode": self.last_target_update_episode},
+            "{}/learner_state.th".format(path),
+        )
 
     def load_models(self, path):
         self.mac.load_models(path)
-        # Not quite right but I don't want to save target networks
-        self.target_mac.load_models(path)
+        target_agent_path = "{}/target_agent.th".format(path)
+        if os.path.isfile(target_agent_path):
+            self.target_mac.agent.load_state_dict(
+                th.load(target_agent_path, map_location=lambda storage, loc: storage)
+            )
+        else:
+            self.target_mac.load_models(path)
         if self.mixer is not None:
             self.mixer.load_state_dict(th.load("{}/mixer.th".format(path), map_location=lambda storage, loc: storage))
+            target_mixer_path = "{}/target_mixer.th".format(path)
+            if os.path.isfile(target_mixer_path):
+                self.target_mixer.load_state_dict(
+                    th.load(target_mixer_path, map_location=lambda storage, loc: storage)
+                )
+            else:
+                self.target_mixer.load_state_dict(self.mixer.state_dict())
         self.optimiser.load_state_dict(th.load("{}/opt.th".format(path), map_location=lambda storage, loc: storage))
+        learner_state_path = "{}/learner_state.th".format(path)
+        if os.path.isfile(learner_state_path):
+            learner_state = th.load(
+                learner_state_path, map_location=lambda storage, loc: storage
+            )
+            self.last_target_update_episode = int(
+                learner_state.get("last_target_update_episode", 0)
+            )

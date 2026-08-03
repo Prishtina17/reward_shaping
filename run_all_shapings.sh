@@ -19,20 +19,23 @@ DIPLOMA_RUNNER_LOG_INTERVAL="${DIPLOMA_RUNNER_LOG_INTERVAL:-10000}"
 DIPLOMA_LEARNER_LOG_INTERVAL="${DIPLOMA_LEARNER_LOG_INTERVAL:-10000}"
 DIPLOMA_TEST_NEPISODE="${DIPLOMA_TEST_NEPISODE:-32}"
 SAVE_MODEL="${SAVE_MODEL:-True}"
-SAVE_MODEL_INTERVAL="${SAVE_MODEL_INTERVAL:-${DIPLOMA_T_MAX}}"
+SAVE_MODEL_INTERVAL="${SAVE_MODEL_INTERVAL:-100000}"
 
 RESULTS_ROOT="${RESULTS_ROOT:-results/final_run}"
 MANIFEST="${MANIFEST:-${RESULTS_ROOT}/completed_runs.tsv}"
+RESUME_ROOT="${RESUME_ROOT:-${RESULTS_ROOT}/resume}"
 RESUME="${RESUME:-1}"
+RESUME_PARTIAL_RUNS="${RESUME_PARTIAL_RUNS:-1}"
 DRY_RUN="${DRY_RUN:-0}"
 MAX_RUNS="${MAX_RUNS:-0}"
 ALLOW_DIRTY_RUN="${ALLOW_DIRTY_RUN:-0}"
 
-GIT_REVISION="$(git rev-parse --verify HEAD)"
+GIT_REVISION="${PROTOCOL_REVISION:-$(git rev-parse --verify HEAD)}"
 # Windows checkouts mounted in WSL can differ from the index only by CRLF/LF.
 # Ignore that representation detail, but still reject substantive tracked or
 # staged changes so every final run remains tied to one reproducible revision.
-if ! git diff --ignore-space-at-eol --quiet || ! git diff --cached --quiet; then
+if [[ -z "${PROTOCOL_REVISION:-}" ]] && \
+   { ! git diff --ignore-space-at-eol --quiet || ! git diff --cached --quiet; }; then
   if [[ "${ALLOW_DIRTY_RUN}" != "1" ]]; then
     echo "Refusing to run from a dirty tracked worktree." >&2
     echo "Commit the protocol first, or use ALLOW_DIRTY_RUN=1 only for a disposable pilot." >&2
@@ -129,6 +132,28 @@ for map_entry in "${MAP_CONFIGS[@]}"; do
         "local_results_path=${RESULTS_ROOT}"
       )
 
+      resume_checkpoint_path="${RESUME_ROOT}/map=${map_name}__env=${env_config}__seed=${seed}"
+      command+=("resume_checkpoint_path=${resume_checkpoint_path}")
+      if [[ "${RESUME}" == "1" && "${RESUME_PARTIAL_RUNS}" == "1" ]]; then
+        latest_resume_step=-1
+        for checkpoint_dir in "${resume_checkpoint_path}"/[0-9]*; do
+          if [[ ! -d "${checkpoint_dir}" || ! -f "${checkpoint_dir}/checkpoint_complete" ]]; then
+            continue
+          fi
+          checkpoint_step="$(basename "${checkpoint_dir}")"
+          if [[ "${checkpoint_step}" =~ ^[0-9]+$ ]] && (( checkpoint_step > latest_resume_step )); then
+            latest_resume_step="${checkpoint_step}"
+          fi
+        done
+        if (( latest_resume_step >= 0 )); then
+          command+=(
+            "checkpoint_path=${resume_checkpoint_path}"
+            "load_step=${latest_resume_step}"
+          )
+          echo "[resume] ${map_name} ${env_config} seed=${seed} from t_env=${latest_resume_step}"
+        fi
+      fi
+
       echo "[run] map=${map_name} env=${env_config} seed=${seed} epsilon_anneal=${epsilon_anneal} t_max=${DIPLOMA_T_MAX}"
       if [[ "${DRY_RUN}" == "1" ]]; then
         printf '  %q' "${command[@]}"
@@ -137,6 +162,9 @@ for map_entry in "${MAP_CONFIGS[@]}"; do
         cleanup_sc2
         "${command[@]}"
         printf '%s\n' "${run_key}" >> "${MANIFEST}"
+        if [[ -d "${resume_checkpoint_path}" && "${resume_checkpoint_path}" == "${RESUME_ROOT}/"* ]]; then
+          rm -rf -- "${resume_checkpoint_path}"
+        fi
         cleanup_sc2
       fi
 

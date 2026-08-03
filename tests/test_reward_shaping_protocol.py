@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import torch
 import yaml
 
 
@@ -23,6 +25,19 @@ def load_shaping_utils():
 
 
 UTILS = load_shaping_utils()
+
+
+def load_checkpointing_utils():
+    path = ROOT / "src" / "run" / "checkpointing.py"
+    spec = importlib.util.spec_from_file_location("checkpointing_utils", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+CHECKPOINTING = load_checkpointing_utils()
 
 
 class DummyUnit:
@@ -201,3 +216,83 @@ def test_potential_configs_match_learner_gamma():
             )
         )["env_args"]
         assert args["rc_pb_gamma"] == pytest.approx(learner_gamma), suffix
+
+
+class DummyReplayBuffer:
+    def __init__(self):
+        self.buffer_index = 3
+        self.episodes_in_buffer = 3
+        self.buffer_size = 4
+        self.data = SimpleNamespace(
+            transition_data={"state": torch.arange(8).reshape(4, 2)},
+            episode_data={"seed": torch.arange(4)},
+        )
+
+
+class DummyLearner:
+    def save_models(self, path):
+        torch.save({"ok": True}, os.path.join(path, "agent.th"))
+
+
+def test_resume_checkpoint_round_trip_restores_replay_buffer(tmp_path):
+    buffer = DummyReplayBuffer()
+    expected_transition = buffer.data.transition_data["state"][:3].clone()
+    expected_episode = buffer.data.episode_data["seed"][:3].clone()
+    state = CHECKPOINTING.capture_training_state(
+        buffer=buffer,
+        runner_t_env=1234,
+        episode=56,
+        last_test_t=1000,
+        last_log_t=1100,
+        model_save_time=1234,
+    )
+    checkpoint_path = CHECKPOINTING.write_resume_checkpoint(
+        str(tmp_path), 1234, DummyLearner(), state
+    )
+
+    buffer.data.transition_data["state"].zero_()
+    buffer.data.episode_data["seed"].zero_()
+    buffer.buffer_index = 0
+    buffer.episodes_in_buffer = 0
+    restored = CHECKPOINTING.restore_training_state(checkpoint_path, buffer)
+
+    assert restored["runner_t_env"] == 1234
+    assert restored["episode"] == 56
+    assert buffer.buffer_index == 3
+    assert buffer.episodes_in_buffer == 3
+    assert torch.equal(buffer.data.transition_data["state"][:3], expected_transition)
+    assert torch.equal(buffer.data.episode_data["seed"][:3], expected_episode)
+    assert torch.count_nonzero(buffer.data.transition_data["state"][3]) == 0
+    assert buffer.data.episode_data["seed"][3] == 0
+
+
+def test_resume_checkpoint_keeps_only_latest_complete_state(tmp_path):
+    buffer = DummyReplayBuffer()
+    first_state = CHECKPOINTING.capture_training_state(
+        buffer, 100, 8, 0, 0, 100
+    )
+    second_state = CHECKPOINTING.capture_training_state(
+        buffer, 200, 16, 100, 100, 200
+    )
+    CHECKPOINTING.write_resume_checkpoint(
+        str(tmp_path), 100, DummyLearner(), first_state
+    )
+    CHECKPOINTING.write_resume_checkpoint(
+        str(tmp_path), 200, DummyLearner(), second_state
+    )
+
+    latest_step, latest_path = CHECKPOINTING.latest_complete_checkpoint(
+        str(tmp_path)
+    )
+    assert latest_step == 200
+    assert latest_path == str(tmp_path / "200")
+    assert not (tmp_path / "100").exists()
+
+
+def test_final_protocol_enables_periodic_partial_resume():
+    script = (ROOT / "run_all_shapings.sh").read_text(encoding="utf-8")
+    assert 'SAVE_MODEL_INTERVAL="${SAVE_MODEL_INTERVAL:-100000}"' in script
+    assert 'RESUME_PARTIAL_RUNS="${RESUME_PARTIAL_RUNS:-1}"' in script
+    assert 'GIT_REVISION="${PROTOCOL_REVISION:-$(git rev-parse --verify HEAD)}"' in script
+    assert '"checkpoint_path=${resume_checkpoint_path}"' in script
+    assert '"resume_checkpoint_path=${resume_checkpoint_path}"' in script

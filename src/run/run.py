@@ -1,6 +1,7 @@
 import datetime
 import os
 import pprint
+import signal
 import time
 import threading
 import torch as th
@@ -13,6 +14,7 @@ from runners import REGISTRY as r_REGISTRY
 from controllers import REGISTRY as mac_REGISTRY
 from components.episode_buffer import ReplayBuffer
 from components.transforms import OneHot
+from .checkpointing import capture_training_state, restore_training_state, write_resume_checkpoint
 
 from smac.env import StarCraft2Env
 
@@ -72,9 +74,6 @@ def run(_run, _config, _log):
 
     print("Exiting script")
 
-    # Making sure framework really exits
-    os._exit(os.EX_OK)
-
 
 def evaluate_sequential(args, runner):
 
@@ -133,6 +132,11 @@ def run_sequential(args, logger):
     if args.use_cuda:
         learner.cuda()
 
+    episode = 0
+    last_test_T = -args.test_interval - 1
+    last_log_T = 0
+    model_save_time = 0
+
     if args.checkpoint_path != "":
 
         timesteps = []
@@ -162,15 +166,24 @@ def run_sequential(args, logger):
         learner.load_models(model_path)
         runner.t_env = timestep_to_load
 
+        resume_state = restore_training_state(model_path, buffer)
+        if resume_state is not None:
+            runner.t_env = int(resume_state["runner_t_env"])
+            episode = int(resume_state["episode"])
+            last_test_T = int(resume_state["last_test_t"])
+            last_log_T = int(resume_state["last_log_t"])
+            model_save_time = int(resume_state["model_save_time"])
+            logger.console_logger.info(
+                "Restored full training state at t_env={} with {}/{} replay episodes".format(
+                    runner.t_env,
+                    buffer.episodes_in_buffer,
+                    buffer.buffer_size,
+                )
+            )
+
         if args.evaluate or args.save_replay:
             evaluate_sequential(args, runner)
             return
-
-    # start training
-    episode = 0
-    last_test_T = -args.test_interval - 1
-    last_log_T = 0
-    model_save_time = 0
 
     def _save_model_checkpoint():
         nonlocal model_save_time
@@ -185,6 +198,28 @@ def run_sequential(args, logger):
         logger.console_logger.info("Saving models to {}".format(save_path))
         learner.save_models(save_path)
 
+        resume_checkpoint_path = getattr(args, "resume_checkpoint_path", "")
+        if resume_checkpoint_path:
+            logger.console_logger.info(
+                "Saving resumable training state to {}".format(
+                    resume_checkpoint_path
+                )
+            )
+            training_state = capture_training_state(
+                buffer=buffer,
+                runner_t_env=runner.t_env,
+                episode=episode,
+                last_test_t=last_test_T,
+                last_log_t=last_log_T,
+                model_save_time=model_save_time,
+            )
+            write_resume_checkpoint(
+                resume_checkpoint_path,
+                runner.t_env,
+                learner,
+                training_state,
+            )
+
     start_time = time.time()
     last_time = start_time
 
@@ -196,6 +231,20 @@ def run_sequential(args, logger):
 
     replay_winrate_thresholds = [0.95]  # save replays only at 0.95 win rate
     saved_replay_markers = set()
+    stop_requested = False
+
+    def _request_graceful_stop(signum, _frame):
+        nonlocal stop_requested
+        if not stop_requested:
+            logger.console_logger.warning(
+                "Received signal {}. Finishing the current episode and saving a resume checkpoint.".format(
+                    signum
+                )
+            )
+        stop_requested = True
+
+    signal.signal(signal.SIGINT, _request_graceful_stop)
+    signal.signal(signal.SIGTERM, _request_graceful_stop)
 
     env_name_for_replay = getattr(args, "env", "env")
     env_cfg_name = getattr(args, "env_config_name", None)
@@ -273,7 +322,7 @@ def run_sequential(args, logger):
             "Replay saved for win rate {:.2f}% with prefix '{}'.".format(win_rate_value * 100.0, prefix)
         )
 
-    while runner.t_env <= args.t_max:
+    while runner.t_env < args.t_max and not stop_requested:
 
         # Run for a whole episode at a time
 
@@ -366,6 +415,13 @@ def run_sequential(args, logger):
         _save_model_checkpoint()
 
     runner.close_env()
+    if stop_requested:
+        logger.console_logger.warning(
+            "Training interrupted cleanly at t_env={}; resume checkpoint saved.".format(
+                runner.t_env
+            )
+        )
+        raise KeyboardInterrupt
     logger.console_logger.info("Finished Training")
 
 

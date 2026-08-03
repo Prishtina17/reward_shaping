@@ -277,6 +277,22 @@ SEEDS_CSV=42 ENV_CONFIGS_CSV=melee_range_control_pb \
 такие записи получают revision с суффиксом `-dirty` и не годятся как финальные
 публикационные результаты.
 
+Долгий локальный прогон можно безопасно останавливать утром и продолжать ночью:
+
+```bash
+bash start_experiments.sh
+bash stop_experiments.sh
+bash start_experiments.sh
+```
+
+По умолчанию model-checkpoints пишутся каждые `100000` environment steps.
+`stop_experiments.sh` посылает мягкий сигнал главному процессу: текущий эпизод
+заканчивается, после чего атомарно сохраняются online/target networks,
+optimizer, `t_env`, номер эпизода, RNG и заполненная часть replay buffer.
+Повторный запуск автоматически находит последний целый rolling checkpoint.
+После полного завершения комбинации она записывается в manifest, а тяжелый
+rolling replay-buffer удаляется; финальные model-checkpoints и логи остаются.
+
 Кастомный список карт (формат `map:epsilon_anneal_time`):
 
 ```bash
