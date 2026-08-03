@@ -3,5 +3,6 @@ __MACOSX/
 __pycache__/
 results/
 *.png
+!july_runs/**/*.png
 *.zip
 .DS_Store

@@ -1,0 +1,86 @@
+{
+  "artifacts": [],
+  "command": "my_main",
+  "experiment": {
+    "base_dir": "/home/anton/reward_shaping/src",
+    "dependencies": [
+      "munch==2.5.0",
+      "numpy==1.24.3",
+      "PyYAML==5.3.1",
+      "sacred==0.7.5",
+      "torch==1.12.1+cpu"
+    ],
+    "mainfile": "main.py",
+    "name": "pymarl",
+    "repositories": [],
+    "sources": [
+      [
+        "main.py",
+        "_sources/main_1ab1415c899544d2d06467a963683c82.py"
+      ],
+      [
+        "utils/logging.py",
+        "_sources/logging_ce9a261c391cbeae67129d3d806d06da.py"
+      ]
+    ]
+  },
+  "heartbeat": "2026-08-03T04:28:11.137314",
+  "host": {
+    "ENV": {},
+    "cpu": "AMD Ryzen 5 5500",
+    "hostname": "anton-MS-7B86",
+    "os": [
+      "Linux",
+      "Linux-7.0.0-28-generic-x86_64-with-glibc2.17"
+    ],
+    "python_version": "3.8.20"
+  },
+  "meta": {
+    "command": "my_main",
+    "options": {
+      "--beat_interval": null,
+      "--capture": null,
+      "--comment": null,
+      "--debug": false,
+      "--enforce_clean": false,
+      "--file_storage": null,
+      "--force": false,
+      "--help": false,
+      "--loglevel": null,
+      "--mongo_db": null,
+      "--name": null,
+      "--pdb": false,
+      "--print_config": false,
+      "--priority": null,
+      "--queue": false,
+      "--sql": null,
+      "--tiny_db": null,
+      "--unobserved": false,
+      "COMMAND": null,
+      "UPDATE": [
+        "env_args.map_name=2m_vs_1z",
+        "env_args.seed=42",
+        "seed=42",
+        "epsilon_anneal_time=100000",
+        "t_max=2050000",
+        "test_interval=10000",
+        "log_interval=10000",
+        "runner_log_interval=10000",
+        "learner_log_interval=10000",
+        "test_nepisode=32",
+        "training_stop_mode=steps",
+        "save_model=True",
+        "save_model_interval=100000",
+        "local_results_path=results/full_3a0dc33_sacred_fix",
+        "resume_checkpoint_path=results/full_3a0dc33_sacred_fix/resume/map=2m_vs_1z__env=melee_range_control_pb__seed=42"
+      ],
+      "help": false,
+      "with": true
+    }
+  },
+  "resources": [],
+  "result": null,
+  "start_time": "2026-08-03T03:33:38.168963",
+  "status": "COMPLETED",
+  "stop_time": "2026-08-03T04:28:11.064096"
+}

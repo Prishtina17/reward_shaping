@@ -1,0 +1,9 @@
+d9518fac55b1f3b4dbe1e3ca27f8a52e87241775	qmix	/home/anton/miniconda3/envs/marl_sc2/bin/python	2m_vs_1z	melee_range_control_ab	42	100000	2050000	10000	32	10000	10000	10000	True	100000
+d9518fac55b1f3b4dbe1e3ca27f8a52e87241775	qmix	/home/anton/miniconda3/envs/marl_sc2/bin/python	2m_vs_1z	melee_range_control_ap	42	100000	2050000	10000	32	10000	10000	10000	True	100000
+d9518fac55b1f3b4dbe1e3ca27f8a52e87241775	qmix	/home/anton/miniconda3/envs/marl_sc2/bin/python	2m_vs_1z	melee_range_control_asp	42	100000	2050000	10000	32	10000	10000	10000	True	100000
+d9518fac55b1f3b4dbe1e3ca27f8a52e87241775	qmix	/home/anton/miniconda3/envs/marl_sc2/bin/python	2m_vs_1z	melee_range_control_pb	42	100000	2050000	10000	32	10000	10000	10000	True	100000
+d9518fac55b1f3b4dbe1e3ca27f8a52e87241775	qmix	/home/anton/miniconda3/envs/marl_sc2/bin/python	2m_vs_1z	melee_range_control_sb	42	100000	2050000	10000	32	10000	10000	10000	True	100000
+d9518fac55b1f3b4dbe1e3ca27f8a52e87241775	qmix	/home/anton/miniconda3/envs/marl_sc2/bin/python	2m_vs_1z	melee_range_control_sp	42	100000	2050000	10000	32	10000	10000	10000	True	100000
+d9518fac55b1f3b4dbe1e3ca27f8a52e87241775	qmix	/home/anton/miniconda3/envs/marl_sc2/bin/python	2m_vs_1z	melee_range_control_as	42	100000	2050000	10000	32	10000	10000	10000	True	100000
+d9518fac55b1f3b4dbe1e3ca27f8a52e87241775	qmix	/home/anton/miniconda3/envs/marl_sc2/bin/python	2m_vs_1z	sc2	42	100000	2050000	10000	32	10000	10000	10000	True	100000
+d9518fac55b1f3b4dbe1e3ca27f8a52e87241775	qmix	/home/anton/miniconda3/envs/marl_sc2/bin/python	2m_vs_1z	melee_range_control_ab	43	100000	2050000	10000	32	10000	10000	10000	True	100000

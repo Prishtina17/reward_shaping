@@ -1,0 +1,91 @@
+plot_final_metrics.py:201: DeprecationWarning: `np.bool8` is a deprecated alias for `np.bool_`.  (Deprecated NumPy 1.24)
+  if not hasattr(np, "bool8"):
+INFO - No path found after results/full_3a0dc33_sacred_fix/tb_logs/env=melee_range_control_ab__map=2m_vs_1z__seed=42__timestamp=20260802_161817/events.out.tfevents.1785676697.anton-MS-7B86
+INFO - Loaded 0 metrics: map=2m_vs_1z env=melee_range_control_ab seed=42
+INFO - No path found after results/full_3a0dc33_sacred_fix/tb_logs/env=melee_range_control_ab__map=2m_vs_1z__seed=42__timestamp=20260803_034916/events.out.tfevents.1785718156.anton-MS-7B86
+INFO - Loaded 65 metrics: map=2m_vs_1z env=melee_range_control_ab seed=42
+INFO - No path found after results/full_3a0dc33_sacred_fix/tb_logs/env=melee_range_control_ab__map=2m_vs_1z__seed=43__timestamp=20260803_110337/events.out.tfevents.1785744217.anton-MS-7B86
+INFO - Loaded 65 metrics: map=2m_vs_1z env=melee_range_control_ab seed=43
+INFO - No path found after results/full_3a0dc33_sacred_fix/tb_logs/env=melee_range_control_ap__map=2m_vs_1z__seed=42__timestamp=20260803_044358/events.out.tfevents.1785721438.anton-MS-7B86
+INFO - Loaded 65 metrics: map=2m_vs_1z env=melee_range_control_ap seed=42
+INFO - No path found after results/full_3a0dc33_sacred_fix/tb_logs/env=melee_range_control_ap__map=2m_vs_1z__seed=43__timestamp=20260803_115656/events.out.tfevents.1785747416.anton-MS-7B86
+INFO - Loaded 65 metrics: map=2m_vs_1z env=melee_range_control_ap seed=43
+INFO - No path found after results/full_3a0dc33_sacred_fix/tb_logs/env=melee_range_control_as__map=2m_vs_1z__seed=42__timestamp=20260803_091536/events.out.tfevents.1785737736.anton-MS-7B86
+INFO - Loaded 65 metrics: map=2m_vs_1z env=melee_range_control_as seed=42
+INFO - No path found after results/full_3a0dc33_sacred_fix/tb_logs/env=melee_range_control_asp__map=2m_vs_1z__seed=42__timestamp=20260803_053842/events.out.tfevents.1785724722.anton-MS-7B86
+INFO - Loaded 65 metrics: map=2m_vs_1z env=melee_range_control_asp seed=42
+INFO - No path found after results/full_3a0dc33_sacred_fix/tb_logs/env=melee_range_control_pb__map=2m_vs_1z__seed=42__timestamp=20260803_063338/events.out.tfevents.1785728018.anton-MS-7B86
+INFO - Loaded 65 metrics: map=2m_vs_1z env=melee_range_control_pb seed=42
+INFO - No path found after results/full_3a0dc33_sacred_fix/tb_logs/env=melee_range_control_sb__map=2m_vs_1z__seed=42__timestamp=20260803_072812/events.out.tfevents.1785731292.anton-MS-7B86
+INFO - Loaded 65 metrics: map=2m_vs_1z env=melee_range_control_sb seed=42
+INFO - No path found after results/full_3a0dc33_sacred_fix/tb_logs/env=melee_range_control_sp__map=2m_vs_1z__seed=42__timestamp=20260803_082144/events.out.tfevents.1785734504.anton-MS-7B86
+INFO - Loaded 65 metrics: map=2m_vs_1z env=melee_range_control_sp seed=42
+INFO - No path found after results/full_3a0dc33_sacred_fix/tb_logs/env=sc2__map=2m_vs_1z__seed=42__timestamp=20260803_101033/events.out.tfevents.1785741033.anton-MS-7B86
+INFO - Loaded 29 metrics: map=2m_vs_1z env=sc2 seed=42
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/battle_won_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/ep_length_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/episode.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/epsilon.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/grad_norm.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/loss_td.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/q_taken_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__action_match_fraction_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__action_per_step_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__action_return_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__applied_abs_per_step_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__applied_abs_to_base_abs_ratio_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__base_return_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__clipped_fraction_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__episode_steps_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__negative_fraction_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__potential_per_step_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__potential_return_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__potential_value_per_step_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__state_per_step_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__state_return_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__state_score_per_step_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__total_applied_per_step_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__total_applied_return_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/rc__total_raw_return_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/return_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/return_std.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/shaping__ally_alive_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/shaping__ally_dmg_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/shaping__cooldown_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/shaping__dmin_mean_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/shaping__enemy_alive_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/shaping__first_allied_killed_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/shaping__first_enemy_killed_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/target_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/td_error_abs.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_battle_won_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_ep_length_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__action_match_fraction_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__action_per_step_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__action_return_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__applied_abs_per_step_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__applied_abs_to_base_abs_ratio_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__base_return_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__clipped_fraction_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__episode_steps_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__negative_fraction_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__potential_per_step_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__potential_return_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__potential_value_per_step_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__state_per_step_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__state_return_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__state_score_per_step_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__total_applied_per_step_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__total_applied_return_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_rc__total_raw_return_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_return_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_return_std.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_shaping__ally_alive_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_shaping__ally_dmg_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_shaping__cooldown_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_shaping__dmin_mean_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_shaping__enemy_alive_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_shaping__first_allied_killed_mean.png
+INFO - Saved results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224/2m_vs_1z/test_shaping__first_enemy_killed_mean.png
+WARNING - Metric test_battle_won_mean is missing in results/full_3a0dc33_sacred_fix/tb_logs/env=melee_range_control_ab__map=2m_vs_1z__seed=42__timestamp=20260802_161817
+INFO - Saved per-run and aggregate summaries under results/full_3a0dc33_sacred_fix/analysis_check_20260803_1224

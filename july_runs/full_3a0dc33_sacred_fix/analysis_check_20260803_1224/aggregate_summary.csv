@@ -1,0 +1,9 @@
+map,env,n_seeds,final_mean,final_std,final_ci95,auc_mean,auc_std,auc_ci95,steps_to_50_mean,steps_to_50_reached,steps_to_80_mean,steps_to_80_reached,steps_to_95_mean,steps_to_95_reached
+2m_vs_1z,melee_range_control_ab,2,1.0,0.0,0.0,0.9597512277551079,0.001718474911552103,0.015439635714949086,71059.5,2/2,126781.0,2/2,141994.5,2/2
+2m_vs_1z,melee_range_control_ap,2,1.0,0.0,0.0,0.9404364852351813,0.02536140160550022,0.22785948132102027,76010.5,2/2,116648.5,2/2,136881.0,2/2
+2m_vs_1z,melee_range_control_as,1,1.0,nan,nan,0.9633450293215995,nan,nan,71074.0,1/1,71074.0,1/1,141643.0,1/1
+2m_vs_1z,melee_range_control_asp,1,1.0,nan,nan,0.951807034043823,nan,nan,111672.0,1/1,111672.0,1/1,162272.0,1/1
+2m_vs_1z,melee_range_control_pb,1,1.0,nan,nan,0.9521252451557612,nan,nan,80926.0,1/1,111425.0,1/1,151966.0,1/1
+2m_vs_1z,melee_range_control_sb,1,1.0,nan,nan,0.9580397736854223,nan,nan,81039.0,1/1,111331.0,1/1,141651.0,1/1
+2m_vs_1z,melee_range_control_sp,1,1.0,nan,nan,0.9618984331101889,nan,nan,71066.0,1/1,121755.0,1/1,121755.0,1/1
+2m_vs_1z,sc2,1,1.0,nan,nan,0.9520981234846135,nan,nan,70912.0,1/1,70912.0,1/1,172462.0,1/1
